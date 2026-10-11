@@ -1,4 +1,5 @@
 --!strict
+--!native
 -- The Definitive source corpus and the reviewed lists build_starwind.py and motherjungle_audit.py
 -- carry, verbatim.
 
