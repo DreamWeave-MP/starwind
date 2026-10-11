@@ -1,0 +1,24 @@
+manifest_version = 1
+
+[package]
+id = "org.dreamweave.starwind"
+version = "0.1.0"
+jess_api = "1"
+include = ["src"]
+
+[dependencies]
+"org.dreamweave.tes3" = "0.1"
+"org.dreamweave.tes3conv" = "0.1"
+"org.dreamweave.merge-to-master" = "0.1"
+"org.dreamweave.add-vanilla-refs" = "0.1"
+
+[modules]
+"@starwind" = "src/init.luau"
+
+# The module is inert API: it does nothing until something requires it, and runs with the
+# authority of whatever calls it. `build` reads and writes files, so its caller needs both.
+
+[[layer]]
+id = "starwind.core"
+requires = ["tes3.core", "tes3conv.core", "merge-to-master.core", "add-vanilla-refs.core"]
+exports = ["@starwind"]
