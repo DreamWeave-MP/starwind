@@ -289,11 +289,11 @@ function surgery.deleteInstances(records: Records, options: InstanceDelete): num
     -- Without its NAM0, tes3 reads every reference in the cell as persistent.
     if lostCount then
       for position, reference in kept do
-        if reference.temporary then
-          local copy = table.clone(reference)
-          copy.temporary = false
-          kept[position] = copy
-        end
+        if not reference.temporary then continue end
+
+        local copy = table.clone(reference)
+        copy.temporary = false
+        kept[position] = copy
       end
     end
 

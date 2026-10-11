@@ -911,11 +911,11 @@ local function mutuallyExclusive(
   end
 
   for _, value in (second.filters or {}) :: { Value } do
-    if type(value) == 'table' then
-      local key = subject(value :: Table)
-      bySubject[key] = bySubject[key] or {}
-      table.insert(bySubject[key], value :: Table)
-    end
+    if type(value) ~= 'table' then continue end
+
+    local key = subject(value :: Table)
+    bySubject[key] = bySubject[key] or {}
+    table.insert(bySubject[key], value :: Table)
   end
 
   for _, value in (first.filters or {}) :: { Value } do
@@ -925,16 +925,16 @@ local function mutuallyExclusive(
     local key = subject(filter)
 
     for _, other in bySubject[key] or {} do
-      if disjoint(filter, other) then
-        local parts = {}
+      if not disjoint(filter, other) then continue end
 
-        for part in string.gmatch(key .. '\0', '([^%z]*)%z') do
-          if part ~= '' then table.insert(parts, part) end
-        end
+      local parts = {}
 
-        table.insert(reasons, `contradictory_filter:{table.concat(parts, ':')}`)
-        return true, reasons
+      for part in string.gmatch(key .. '\0', '([^%z]*)%z') do
+        if part ~= '' then table.insert(parts, part) end
       end
+
+      table.insert(reasons, `contradictory_filter:{table.concat(parts, ':')}`)
+      return true, reasons
     end
   end
 

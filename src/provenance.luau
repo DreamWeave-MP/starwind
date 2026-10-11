@@ -609,11 +609,11 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
         for _, value in direct do
           local reference = value :: { [string]: Json }
 
-          if reference.hygiene_classification == 'PROBABLE_TESCS_LINK_DIRT' then
-            local source = reference.source :: string
-            classA[source] = classA[source] or {}
-            classA[source][norm(reference.info_id :: string)] = true
-          end
+          if reference.hygiene_classification ~= 'PROBABLE_TESCS_LINK_DIRT' then continue end
+
+          local source = reference.source :: string
+          classA[source] = classA[source] or {}
+          classA[source][norm(reference.info_id :: string)] = true
         end
       end
 
