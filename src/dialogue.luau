@@ -676,7 +676,7 @@ local function diffPaths(expected: Value?, actual: Value?, prefix: string, out: 
     table.insert(keys, key)
   end
 
-  table.sort(keys, function(a, b) return snakeKey(a) < snakeKey(b) end)
+  table.sort(keys, function(first, second) return snakeKey(first) < snakeKey(second) end)
 
   for _, key in keys do
     local path = if prefix == '' then snakeKey(key) else `{prefix}.{snakeKey(key)}`
@@ -752,20 +752,20 @@ local function allows(comparison: string, target: number, value: number): boolea
   return true
 end
 
-local function disjoint(a: Table, b: Table): boolean
-  local av, bv = comparable(filterValue(a)), comparable(filterValue(b))
+local function disjoint(left: Table, right: Table): boolean
+  local leftValue, rightValue = comparable(filterValue(left)), comparable(filterValue(right))
 
-  if av == nil or bv == nil then return false end
+  if leftValue == nil or rightValue == nil then return false end
 
-  local ac, bc = norm(a.comparison), norm(b.comparison)
+  local leftComparison, rightComparison = norm(left.comparison), norm(right.comparison)
 
-  if not Known[ac] or not Known[bc] then return false end
+  if not Known[leftComparison] or not Known[rightComparison] then return false end
 
-  if ac == 'equal' then
-    return not allows(bc, av :: number, bv :: number)
-  elseif bc == 'equal' then
-    return not allows(ac, bv :: number, av :: number)
-  elseif ac == 'notequal' or bc == 'notequal' then
+  if leftComparison == 'equal' then
+    return not allows(rightComparison, leftValue :: number, rightValue :: number)
+  elseif rightComparison == 'equal' then
+    return not allows(leftComparison, rightValue :: number, leftValue :: number)
+  elseif leftComparison == 'notequal' or rightComparison == 'notequal' then
     return false
   end
 
@@ -781,27 +781,36 @@ local function disjoint(a: Table, b: Table): boolean
     return nil, false, value, true
   end
 
-  local alo, aloinc, ahi, ahiinc = bounds(ac, av :: number)
-  local blo, bloinc, bhi, bhiinc = bounds(bc, bv :: number)
-  local lo, loinc = alo, aloinc
+  local leftLow, leftLowInclusive, leftHigh, leftHighInclusive =
+    bounds(leftComparison, leftValue :: number)
+  local rightLow, rightLowInclusive, rightHigh, rightHighInclusive =
+    bounds(rightComparison, rightValue :: number)
+  local low, lowInclusive = leftLow, leftLowInclusive
 
-  if blo ~= nil and (lo == nil or blo > lo or (blo == lo and not bloinc)) then
-    lo, loinc = blo, bloinc
-  elseif blo ~= nil and blo == lo then
-    loinc = loinc and bloinc
+  if
+    rightLow ~= nil
+    and (low == nil or rightLow > low or (rightLow == low and not rightLowInclusive))
+  then
+    low, lowInclusive = rightLow, rightLowInclusive
+  elseif rightLow ~= nil and rightLow == low then
+    lowInclusive = lowInclusive and rightLowInclusive
   end
 
-  local hi, hiinc = ahi, ahiinc
+  local high, highInclusive = leftHigh, leftHighInclusive
 
-  if bhi ~= nil and (hi == nil or bhi < hi or (bhi == hi and not bhiinc)) then
-    hi, hiinc = bhi, bhiinc
-  elseif bhi ~= nil and bhi == hi then
-    hiinc = hiinc and bhiinc
+  if
+    rightHigh ~= nil
+    and (high == nil or rightHigh < high or (rightHigh == high and not rightHighInclusive))
+  then
+    high, highInclusive = rightHigh, rightHighInclusive
+  elseif rightHigh ~= nil and rightHigh == high then
+    highInclusive = highInclusive and rightHighInclusive
   end
 
-  if lo == nil or hi == nil then return false end
+  if low == nil or high == nil then return false end
 
-  return (lo :: number) > (hi :: number) or (lo == hi and not (loinc and hiinc))
+  return (low :: number) > (high :: number)
+    or (low == high and not (lowInclusive and highInclusive))
 end
 
 local function speakerSex(record: Record): string
@@ -827,11 +836,11 @@ local function actorFits(actor: Actor, record: Record): boolean
   return true
 end
 
-local function sharedActors(a: Record, b: Record, actors: { Actor }): (number, { Json })
+local function sharedActors(first: Record, second: Record, actors: { Actor }): (number, { Json })
   local count, sample = 0, report.array()
 
   for _, actor in actors do
-    if actorFits(actor, a) and actorFits(actor, b) then
+    if actorFits(actor, first) and actorFits(actor, second) then
       count += 1
 
       if #sample < 12 then table.insert(sample, actor.id) end
@@ -842,7 +851,11 @@ local function sharedActors(a: Record, b: Record, actors: { Actor }): (number, {
 end
 
 -- `mutually_exclusive_info`: whether two INFOs provably can't answer the same event.
-local function mutuallyExclusive(a: Record, b: Record, actors: { Actor }): (boolean, { Json })
+local function mutuallyExclusive(
+  first: Record,
+  second: Record,
+  actors: { Actor }
+): (boolean, { Json })
   local reasons = report.array()
 
   local comparedFields = {
@@ -853,33 +866,39 @@ local function mutuallyExclusive(a: Record, b: Record, actors: { Actor }): (bool
   }
 
   for _, pair in comparedFields do
-    local av, bv = norm(a[pair[1]]), norm(b[pair[1]])
+    local firstValue, secondValue = norm(first[pair[1]]), norm(second[pair[1]])
 
-    if av ~= '' and bv ~= '' and av ~= bv then
+    if firstValue ~= '' and secondValue ~= '' and firstValue ~= secondValue then
       table.insert(reasons, `different_{pair[2]}`)
       return true, reasons
     end
   end
 
-  local adata, bdata = (a.data or {}) :: Table, (b.data or {}) :: Table
-  local asex, bsex = norm(adata.speakerSex), norm(bdata.speakerSex)
+  local firstData, secondData = (first.data or {}) :: Table, (second.data or {}) :: Table
+  local firstSex, secondSex = norm(firstData.speakerSex), norm(secondData.speakerSex)
 
-  if asex ~= '' and bsex ~= '' and asex ~= 'any' and bsex ~= 'any' and asex ~= bsex then
+  if
+    firstSex ~= ''
+    and secondSex ~= ''
+    and firstSex ~= 'any'
+    and secondSex ~= 'any'
+    and firstSex ~= secondSex
+  then
     table.insert(reasons, 'different_speaker_sex')
     return true, reasons
   end
 
-  local afac, bfac = norm(a.speakerFaction), norm(b.speakerFaction)
-  local arank, brank = adata.speakerRank, bdata.speakerRank
+  local firstFaction, secondFaction = norm(first.speakerFaction), norm(second.speakerFaction)
+  local firstRank, secondRank = firstData.speakerRank, secondData.speakerRank
 
   if
-    afac ~= ''
-    and afac == bfac
-    and arank ~= nil
-    and arank ~= -1
-    and brank ~= nil
-    and brank ~= -1
-    and arank ~= brank
+    firstFaction ~= ''
+    and firstFaction == secondFaction
+    and firstRank ~= nil
+    and firstRank ~= -1
+    and secondRank ~= nil
+    and secondRank ~= -1
+    and firstRank ~= secondRank
   then
     table.insert(reasons, 'different_exact_speaker_rank')
     return true, reasons
@@ -891,7 +910,7 @@ local function mutuallyExclusive(a: Record, b: Record, actors: { Actor }): (bool
     return `{norm(filter.filterType)}\0{norm(filter['function'])}\0{norm(filter.id)}`
   end
 
-  for _, value in (b.filters or {}) :: { Value } do
+  for _, value in (second.filters or {}) :: { Value } do
     if type(value) == 'table' then
       local key = subject(value :: Table)
       bySubject[key] = bySubject[key] or {}
@@ -899,7 +918,7 @@ local function mutuallyExclusive(a: Record, b: Record, actors: { Actor }): (bool
     end
   end
 
-  for _, value in (a.filters or {}) :: { Value } do
+  for _, value in (first.filters or {}) :: { Value } do
     if type(value) ~= 'table' then continue end
 
     local filter = value :: Table
@@ -919,7 +938,7 @@ local function mutuallyExclusive(a: Record, b: Record, actors: { Actor }): (bool
     end
   end
 
-  local count = sharedActors(a, b, actors)
+  local count = sharedActors(first, second, actors)
 
   if count == 0 then
     table.insert(reasons, 'no_shared_actor_candidate')
@@ -1062,9 +1081,9 @@ local function orderSemantics(
   local proven, unproven = report.array(), report.array()
 
   for _, pair in pairs do
-    local a, b = expectedInfos[pair[1]], expectedInfos[pair[2]]
+    local firstInfo, secondInfo = expectedInfos[pair[1]], expectedInfos[pair[2]]
 
-    if not a or not b then
+    if not firstInfo or not secondInfo then
       table.insert(
         unproven,
         report.object { 'first', pair[1], 'second', pair[2], 'reason', 'missing_expected_payload' }
@@ -1072,7 +1091,7 @@ local function orderSemantics(
       continue
     end
 
-    local exclusive, reasons = mutuallyExclusive(a.record, b.record, actors)
+    local exclusive, reasons = mutuallyExclusive(firstInfo.record, secondInfo.record, actors)
     local item = report.object {
       'first',
       pair[1],
@@ -1081,19 +1100,19 @@ local function orderSemantics(
       'proof',
       reasons,
       'first_source',
-      a.source,
+      firstInfo.source,
       'second_source',
-      b.source,
+      secondInfo.source,
     }
 
     if exclusive then
       table.insert(proven, item)
     else
-      local count, sample = sharedActors(a.record, b.record, actors)
+      local count, sample = sharedActors(firstInfo.record, secondInfo.record, actors)
       report.set(item :: { [string]: Json }, 'shared_actor_candidate_count', count)
       report.set(item :: { [string]: Json }, 'shared_actor_candidate_ids', sample)
-      report.set(item :: { [string]: Json }, 'first_constraints', constraints(a.record))
-      report.set(item :: { [string]: Json }, 'second_constraints', constraints(b.record))
+      report.set(item :: { [string]: Json }, 'first_constraints', constraints(firstInfo.record))
+      report.set(item :: { [string]: Json }, 'second_constraints', constraints(secondInfo.record))
       table.insert(unproven, item)
     end
   end
@@ -1379,15 +1398,16 @@ local function triage(
   end
 
   table.sort(keys, function(left, right)
-    local a, b = candidates[left], candidates[right]
+    local first, second = candidates[left], candidates[right]
 
-    if a.count ~= b.count then return a.count > b.count end
+    if first.count ~= second.count then return first.count > second.count end
 
-    local at, bt = a.entry.dialogue_id :: string, b.entry.dialogue_id :: string
+    local firstTopic, secondTopic =
+      first.entry.dialogue_id :: string, second.entry.dialogue_id :: string
 
-    if at ~= bt then return at < bt end
+    if firstTopic ~= secondTopic then return firstTopic < secondTopic end
 
-    return (a.entry.info_id :: string) < (b.entry.info_id :: string)
+    return (first.entry.info_id :: string) < (second.entry.info_id :: string)
   end)
 
   local pairs = {}

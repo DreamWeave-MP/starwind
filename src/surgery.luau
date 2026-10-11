@@ -55,11 +55,11 @@ function surgery.id(record: Record): string
   elseif kind == 'PathGrid' then
     local name = tes3.string(record.cell)
     local grid = ((record.data or {}) :: Table).grid :: Table?
-    local x, y = grid and grid[1] or 0, grid and grid[2] or 0
+    local gridX, gridY = grid and grid[1] or 0, grid and grid[2] or 0
 
-    if x == 0 and y == 0 then return string.lower(name) end
+    if gridX == 0 and gridY == 0 then return string.lower(name) end
 
-    return string.lower(`{name} ({x}, {y})`)
+    return string.lower(`{name} ({gridX}, {gridY})`)
   elseif kind == 'Landscape' then
     local grid = record.grid :: Table
     return `({grid[1]}, {grid[2]})`
@@ -358,8 +358,8 @@ local function base64Encode(data: string): string
   local parts = {}
 
   for index = 1, #data, 3 do
-    local a, b, c = string.byte(data, index, index + 2)
-    local value = bit32.lshift(a, 16) + bit32.lshift(b or 0, 8) + (c or 0)
+    local first, second, third = string.byte(data, index, index + 2)
+    local value = bit32.lshift(first, 16) + bit32.lshift(second or 0, 8) + (third or 0)
 
     local function digit(shift: number): string
       local at = bit32.band(bit32.rshift(value, shift), 63) + 1
@@ -368,7 +368,7 @@ local function base64Encode(data: string): string
 
     table.insert(
       parts,
-      digit(18) .. digit(12) .. (b and digit(6) or '=') .. (c and digit(0) or '=')
+      digit(18) .. digit(12) .. (second and digit(6) or '=') .. (third and digit(0) or '=')
     )
   end
 

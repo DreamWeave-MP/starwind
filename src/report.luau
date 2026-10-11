@@ -125,22 +125,26 @@ local function encode(value: Json?, indent: string, parts: { string })
   elseif kind == 'string' then
     table.insert(parts, '"' .. escape(value :: string) .. '"')
   else
-    local tbl = value :: { [string | number]: Json }
+    local container = value :: { [string | number]: Json }
     local inner = indent .. '  '
-    local keys = order[tbl]
+    local keys = order[container]
 
-    if not keys and not dicts[tbl] and (arrays[tbl] or #tbl > 0 or next(tbl) == nil) then
-      if #tbl == 0 then
+    if
+      not keys
+      and not dicts[container]
+      and (arrays[container] or #container > 0 or next(container) == nil)
+    then
+      if #container == 0 then
         table.insert(parts, '[]')
         return
       end
 
       table.insert(parts, '[\n')
 
-      for index, item in tbl :: { Json } do
+      for index, item in container :: { Json } do
         table.insert(parts, inner)
         encode(item, inner, parts)
-        table.insert(parts, if index < #tbl then ',\n' else '\n')
+        table.insert(parts, if index < #container then ',\n' else '\n')
       end
 
       table.insert(parts, indent .. ']')
@@ -150,7 +154,7 @@ local function encode(value: Json?, indent: string, parts: { string })
     if not keys then
       local sorted = {}
 
-      for key in tbl do
+      for key in container do
         table.insert(sorted, tostring(key))
       end
 
@@ -167,7 +171,7 @@ local function encode(value: Json?, indent: string, parts: { string })
 
     for index, key in keys :: { string } do
       table.insert(parts, inner .. '"' .. escape(key) .. '": ')
-      encode(tbl[key], inner, parts)
+      encode(container[key], inner, parts)
       table.insert(parts, if index < #(keys :: { string }) then ',\n' else '\n')
     end
 
@@ -198,13 +202,13 @@ end
 function report.snake(value: Json): Json
   if type(value) ~= 'table' then return value end
 
-  local tbl = value :: { [string | number]: Json }
+  local container = value :: { [string | number]: Json }
 
   -- An empty record table is almost always an empty list (`filters`, `spells`).
-  if #tbl > 0 or next(tbl) == nil then
+  if #container > 0 or next(container) == nil then
     local items = {}
 
-    for index, item in tbl :: { Json } do
+    for index, item in container :: { Json } do
       items[index] = report.snake(item)
     end
 
@@ -213,7 +217,7 @@ function report.snake(value: Json): Json
 
   local result: { [string]: Json } = {}
 
-  for key, item in tbl do
+  for key, item in container do
     local name = string.gsub(
       tostring(key),
       '(%u)',

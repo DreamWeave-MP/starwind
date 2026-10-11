@@ -150,9 +150,11 @@ local function changedLinks(child: Record, parent: Record?): Json
   if not parent then return result end
 
   for _, pair in { { 'prevId', 'prev_id' }, { 'nextId', 'next_id' } } do
-    local c, p = norm(child[pair[1]]), norm((parent :: Record)[pair[1]])
+    local childLink, parentLink = norm(child[pair[1]]), norm((parent :: Record)[pair[1]])
 
-    if c ~= p then report.set(result, pair[2], report.object { 'parent', p, 'child', c }) end
+    if childLink ~= parentLink then
+      report.set(result, pair[2], report.object { 'parent', parentLink, 'child', childLink })
+    end
   end
 
   return result

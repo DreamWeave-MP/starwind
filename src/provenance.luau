@@ -154,14 +154,14 @@ end
 -- Every scalar in a value with its dotted path, as `record_values` walks it.
 local function values(value: Value?, path: string, out: { { path: string, value: Value } })
   if type(value) == 'table' then
-    local tbl = value :: Table
+    local container = value :: Table
 
-    if #tbl > 0 then
-      for index, item in tbl do
+    if #container > 0 then
+      for index, item in container do
         values(item, `{path}[{(index :: number) - 1}]`, out)
       end
     else
-      for key, item in tbl do
+      for key, item in container do
         local name = string.gsub(
           tostring(key),
           '(%u)',
@@ -487,12 +487,19 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
     end
 
     for _, source in sourceList do
-      local e, s, p = scan(source.records, source.label, source.path, lateSet)
+      local foundExact, foundScripts, foundPlaced =
+        scan(source.records, source.label, source.path, lateSet)
 
       for id in lateSet do
-        table.move(e[id], 1, #e[id], #sourceExact[id] + 1, sourceExact[id])
-        table.move(s[id], 1, #s[id], #sourceScripts[id] + 1, sourceScripts[id])
-        table.move(p[id], 1, #p[id], #sourcePlaced[id] + 1, sourcePlaced[id])
+        table.move(foundExact[id], 1, #foundExact[id], #sourceExact[id] + 1, sourceExact[id])
+        table.move(
+          foundScripts[id],
+          1,
+          #foundScripts[id],
+          #sourceScripts[id] + 1,
+          sourceScripts[id]
+        )
+        table.move(foundPlaced[id], 1, #foundPlaced[id], #sourcePlaced[id] + 1, sourcePlaced[id])
       end
     end
 
