@@ -4,6 +4,7 @@ manifest_version = 1
 id = "org.dreamweave.starwind"
 version = "0.1.0"
 jess_api = "1"
+default_target = "starwind"
 include = ["src"]
 tests = ["tests/run.luau", "tests/cli.luau"]
 
@@ -24,3 +25,15 @@ tests = ["tests/run.luau", "tests/cli.luau"]
 id = "starwind.core"
 requires = ["tes3.core", "tes3conv.core", "merge-to-master.core", "add-vanilla-refs.core"]
 exports = ["@starwind", "@starwind/cli"]
+
+# The build's command line: `src/main.luau` hands its arguments to `@starwind/cli`. The build
+# reads the JSON sources under <root>/plugins and reads back the plugins it wrote
+# (filesystem.read), and makes its output folders and writes the plugins, reports, and manifest
+# into them (filesystem.write). It reads no environment, runs no other program, and opens no
+# connection.
+
+[targets.starwind]
+kind = "command"
+command = "starwind"
+entry = "src/main.luau"
+capabilities = ["filesystem.read", "filesystem.write"]
