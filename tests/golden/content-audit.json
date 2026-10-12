@@ -1,0 +1,114 @@
+{
+  "summary": {
+    "expected_live_dialogues": 1,
+    "standalone_dialogues": 1,
+    "missing_dialogues": 0,
+    "extra_dialogues": 0,
+    "missing_live_infos": 0,
+    "extra_dead_infos": 0,
+    "engine_order_mismatches": 0,
+    "precedence_inversions": 0,
+    "proven_disjoint_inversions": 0,
+    "potentially_competing_inversions": 0,
+    "semantically_safe_order_mismatches": 0,
+    "behaviorally_risky_order_mismatches": 0,
+    "extra_topic_infos": 0,
+    "rust_materialized_topics": 0,
+    "rust_materialized_not_expected": 0,
+    "extra_dialogues_with_rust_materialization": 0,
+    "extra_dialogues_without_rust_materialization": 0,
+    "standalone_physical_order_mismatches": 0,
+    "serialized_link_mismatches": 1,
+    "dialogue_content_mismatches": 1,
+    "info_content_mismatches": 2,
+    "standalone_orphan_infos": 0,
+    "potential_patch_candidate_infos": 0
+  },
+  "missing_dialogues": [],
+  "extra_dialogues": [],
+  "extra_dialogue_details": [],
+  "rust_materialized_not_expected": [],
+  "missing_live_infos": [],
+  "extra_dead_infos": [],
+  "engine_order_mismatches": [],
+  "order_semantics": [],
+  "standalone_physical_order_mismatches": [],
+  "serialized_link_mismatches": [
+    {
+      "dialogue_id": "ships",
+      "info_id": "100",
+      "expected_prev": "",
+      "actual_prev": "elsewhere",
+      "expected_next": "200",
+      "actual_next": "again"
+    }
+  ],
+  "dialogue_content_mismatches": [
+    {
+      "dialogue_id": "ships"
+    }
+  ],
+  "info_content_mismatches": [
+    {
+      "dialogue_id": "ships",
+      "info_id": "200",
+      "differing_fields": [
+        "data.disposition",
+        "data.speaker_rank",
+        "filters.length",
+        "quest_state",
+        "sound_path",
+        "text"
+      ]
+    },
+    {
+      "dialogue_id": "ships",
+      "info_id": "300",
+      "differing_fields": [
+        "filters[0].comparison",
+        "filters[0].value.data",
+        "filters[1].value.data"
+      ]
+    }
+  ],
+  "standalone_orphan_infos": [],
+  "potential_corruption_pairs": [],
+  "patch_candidates": {},
+  "liveness_audit": {
+    "effective_infos": 3,
+    "live_topic_effective_infos": 3,
+    "starwind_owned_infos": 3,
+    "retained_vanilla_infos": 0,
+    "pruned_vanilla_infos": 0,
+    "keep_reasons": {},
+    "live_topics": 1
+  },
+  "expected_base_mode": "explicit-cli",
+  "reconstruction_stack": [
+    "Morrowind.esm",
+    "Starwind"
+  ],
+  "starwind_ownership_source": "Starwind",
+  "actor_population_source": "final (fallback; no Rust snapshot found)",
+  "final_actor_population_count": 0,
+  "liveness_actor_population_count": 0,
+  "materialization_log": "decoupleLog.txt",
+  "provenance_sources": [],
+  "notes": [
+    "Expected dialogue is a liveness slice, not a Starwind-provenance-only slice.",
+    "Starwind response-text words do not create DIAL dependencies.",
+    "Same-named typed dependencies such as RACE 'Argonian' remain independent of DIAL 'argonian'.",
+    "When staged standalone vanilla masters exist, v11 reconstructs against those exact build-local masters so intentional pre-addVanillaRefs pruning is reflected in expected dialogue.",
+    "Vanilla INFOs are retained when the current pruning policy says they can still match.",
+    "Dialogue INFO text is not used for DIAL topic discovery; vanilla topics do not expand the topic graph.",
+    "Actor population is read from the addVanillaRefs pre-dialogue-liveness snapshot; final Standalone is only a fallback for older logs.",
+    "speaker_cell and dialogue filters are preserved and compared verbatim.",
+    "OpenMW-effective order differences are classified by whether inverted INFO pairs can statically compete.",
+    "Mutual-exclusion proofs are deliberately conservative; unproven does not mean definitely harmful.",
+    "v9 additionally intersects INFO speaker constraints against the actual Standalone actor population.",
+    "Order mismatches include compact contiguous block decomposition to avoid interpreting Cartesian inversion counts as bug counts.",
+    "If decoupleLog telemetry is available, extra vanilla DIALs are correlated directly with Rust materialization reasons.",
+    "Every unresolved precedence pair is cross-indexed against raw vanilla/V1.15/Patch physical INFO occurrences for source-corruption triage.",
+    "Physical INFO order and prev/next links remain audited but are diagnostic unless --strict-structure is used."
+  ]
+}

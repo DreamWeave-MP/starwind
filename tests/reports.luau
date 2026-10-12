@@ -305,6 +305,79 @@ suite.describe('late actors', function()
   end)
 end)
 
+suite.describe('dialogue audit', function()
+  suite.it('names the fields a written INFO differs from the expected one in', function()
+    local topic: Record = { type = 'Dialogue', flags = '', id = 'Ships', dialogueType = 'Topic' }
+    local written = table.clone(topic)
+    written.flags, written.dialogueType = 'BLOCKED', 'Voice'
+
+    local function filter(comparison: string, value: number): Record
+      return {
+        index = 0,
+        filterType = 'Global',
+        id = 'Rent',
+        comparison = comparison,
+        value = { type = 'Integer', data = value },
+      }
+    end
+
+    -- A number a plugin holds as an f32 is the same number.
+    local rounded = info('100', '', '200', '')
+    rounded.data.disposition = 0.1
+    local held = info('100', 'elsewhere', 'again', '')
+    held.data.disposition = string.unpack('<f', string.pack('<f', 0.1))
+
+    local plain = info('200', '100', '300', '')
+    plain.questState = 'Name'
+    local changed = info('200', '100', '300', '')
+    changed.text, changed.soundPath = 'says otherwise', 'vo\\ships.mp3'
+    changed.data.speakerRank, changed.data.disposition = 3, 0.5
+    changed.filters = { filter('Equal', 1) }
+
+    local asked = info('300', '200', '', '')
+    asked.filters = { filter('Equal', 1), filter('Less', 4) }
+    local answered = info('300', '200', '', '')
+    answered.filters = { filter('NotEqual', 2), filter('Less', 4.5) }
+
+    local header: Record = { type = 'Header', flags = '', masters = {} }
+    local path = jess.fs.join(folder 'starwind-audit-content', 'audit.json')
+
+    local report = starwind.dialogue.audit {
+      final = { name = 'final', records = { header, written, held, changed, answered } },
+      starwind = { name = 'Starwind', records = { header, topic, rounded, plain, asked } },
+      bases = { { name = 'Morrowind.esm', records = { header } } },
+      log = {},
+      logPath = 'decoupleLog.txt',
+      provenance = function() return {} end,
+      provenanceNames = {},
+      reportPath = path,
+    }
+
+    expect(report.dialogue_content_mismatches).toEqual { { dialogue_id = 'ships' } }
+    expect(report.info_content_mismatches).toEqual {
+      {
+        dialogue_id = 'ships',
+        info_id = '200',
+        differing_fields = {
+          'data.disposition',
+          'data.speaker_rank',
+          'filters.length',
+          'quest_state',
+          'sound_path',
+          'text',
+        },
+      },
+      {
+        dialogue_id = 'ships',
+        info_id = '300',
+        differing_fields = { 'filters[0].comparison', 'filters[0].value.data', 'filters[1].value.data' },
+      },
+    }
+    expect(report.actor_population_source).toBe 'final (fallback; no Rust snapshot found)'
+    expect(read(path)).toBe(golden 'content-audit.json')
+  end)
+end)
+
 suite.describe('tes3cmd\'s text', function()
   local surgery = starwind.surgery
 
