@@ -609,10 +609,31 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
         if (record.type == 'Npc' or record.type == 'Creature') and not tes3.isDeleted(record) then
           local id = norm(record.id)
 
-          if vanillaActors[id] == nil then
+          if lateSet[id] and vanillaActors[id] == nil then
             vanillaActors[id] = compactActor(record, source.binary or source.label, index - 1)
           end
         end
+      end
+    end
+
+    -- The live INFOs each late actor says, with the topic each is in, in the projection's order.
+    type Said = { topic: string, record: Record, source: string, sourceIndex: number }
+    local said: { [string]: { Said } } = {}
+
+    for topicId, item in inputs.projection do
+      for _, entry in item.infos do
+        local speaker = norm(entry.record.speakerId)
+
+        if not lateSet[speaker] then continue end
+
+        local lines = said[speaker] or {}
+        said[speaker] = lines
+        table.insert(lines, {
+          topic = topicId,
+          record = entry.record,
+          source = entry.source,
+          sourceIndex = entry.sourceIndex,
+        })
       end
     end
 
@@ -620,60 +641,56 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
       local actor = final[id]
       local direct = report.array()
 
-      for topicId, item in inputs.projection do
-        for _, entry in item.infos do
-          if norm(entry.record.speakerId) ~= id then continue end
-
-          local record = entry.record
-          local key = `{topicId}\0{norm(record.id)}`
-          local row = hygieneRows[key]
-          local data = (record.data or {}) :: Table
-          table.insert(
-            direct,
-            report.object {
-              'dial',
-              topicId,
-              'info_id',
-              tes3.string(record.id),
-              'source',
-              entry.source,
-              'source_record_index',
-              entry.sourceIndex,
-              'hygiene_classification',
-              if row then row.category else 'INHERITED_VANILLA',
-              'tescs_dirt_confidence',
-              if row then row.tescs_dirt_confidence else nil,
-              'changed_links',
-              if row then row.changed_links else report.object {},
-              'parent_source',
-              if row then row.parent_source else nil,
-              'parent_record_index',
-              if row then row.parent_record_index else nil,
-              'speaker_id',
-              tes3.string(record.speakerId),
-              'speaker_race',
-              tes3.string(record.speakerRace),
-              'speaker_class',
-              tes3.string(record.speakerClass),
-              'speaker_faction',
-              tes3.string(record.speakerFaction),
-              'speaker_cell',
-              tes3.string(record.speakerCell),
-              'speaker_sex',
-              (data.speakerSex or '') :: Json,
-              'speaker_rank',
-              (data.speakerRank or -1) :: Json,
-              'player_faction',
-              tes3.string(record.playerFaction),
-              'text',
-              tes3.string(record.text),
-              'result',
-              '',
-              'filters',
-              report.snake((record.filters or report.array()) :: Json),
-            }
-          )
-        end
+      for _, entry in said[id] or {} do
+        local topicId, record = entry.topic, entry.record
+        local key = `{topicId}\0{norm(record.id)}`
+        local row = hygieneRows[key]
+        local data = (record.data or {}) :: Table
+        table.insert(
+          direct,
+          report.object {
+            'dial',
+            topicId,
+            'info_id',
+            tes3.string(record.id),
+            'source',
+            entry.source,
+            'source_record_index',
+            entry.sourceIndex,
+            'hygiene_classification',
+            if row then row.category else 'INHERITED_VANILLA',
+            'tescs_dirt_confidence',
+            if row then row.tescs_dirt_confidence else nil,
+            'changed_links',
+            if row then row.changed_links else report.object {},
+            'parent_source',
+            if row then row.parent_source else nil,
+            'parent_record_index',
+            if row then row.parent_record_index else nil,
+            'speaker_id',
+            tes3.string(record.speakerId),
+            'speaker_race',
+            tes3.string(record.speakerRace),
+            'speaker_class',
+            tes3.string(record.speakerClass),
+            'speaker_faction',
+            tes3.string(record.speakerFaction),
+            'speaker_cell',
+            tes3.string(record.speakerCell),
+            'speaker_sex',
+            (data.speakerSex or '') :: Json,
+            'speaker_rank',
+            (data.speakerRank or -1) :: Json,
+            'player_faction',
+            tes3.string(record.playerFaction),
+            'text',
+            tes3.string(record.text),
+            'result',
+            '',
+            'filters',
+            report.snake((record.filters or report.array()) :: Json),
+          }
+        )
       end
 
       local nonDialogue = report.array()
