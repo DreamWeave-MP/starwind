@@ -60,15 +60,7 @@ end
 -- The staged plugins, in the order build_starwind.py lists its sources: tes3cmd backups never
 -- exist here, so this is its `active_staged_plugins`.
 function pipeline.active(work: Work): { Records }
-  local list = {}
-
-  for _, source in sources.Included do
-    local records = work[source.binary]
-
-    if records then table.insert(list, records) end
-  end
-
-  return list
+  return [for {binary} in sources.Included if work[binary] => work[binary]]
 end
 
 local function apply(work: Work, names: { string }, edit: (records: Records) -> Records?)
@@ -233,13 +225,11 @@ function pipeline.preprocess(work: Work)
   local bings = 'bings race pack.esp'
 
   apply(work, { bings }, function(records)
-    local orphans = {}
-
-    for _, record in records do
-      if record.type == 'Bodypart' and tes3.lower(record.race) == 'bng_mustafarian' then
-        table.insert(orphans, tes3.string(record.id))
-      end
-    end
+    local orphans = [
+      for record in records
+      if record.type == 'Bodypart' and tes3.lower(record.race) == 'bng_mustafarian'
+      => tes3.string(record.id)
+    ]
 
     local kept = records
 
