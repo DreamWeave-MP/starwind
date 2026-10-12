@@ -901,19 +901,63 @@ local function actorFits(actor: Actor, {speaker, race, class, sex}: Asked): bool
   return true
 end
 
--- The actors both INFOs could be said by, counted, and the first twelve of them. An INFO that
--- names its speaker is asked only of the actors of that id, who come in the order all do.
-local function sharedActors(
-  first: Record,
-  second: Record,
-  actors: { Actor },
-  byId: { [string]: { Actor } }
-): (number, { Json })
+-- The actors an audit weighs INFOs against: all of them, and those of each id, race, and
+-- class, every list in the order the actors came in.
+type Cast = {
+  all: { Actor },
+  byId: { [string]: { Actor } },
+  byRace: { [string]: { Actor } },
+  byClass: { [string]: { Actor } },
+}
+
+local function castOf(actors: { Actor }): Cast
+  local cast: Cast = { all = actors, byId = {}, byRace = {}, byClass = {} }
+
+  local function listed(lists: { [string]: { Actor } }, key: string, actor: Actor)
+    local list = lists[key]
+
+    if not list then
+      list = {}
+      lists[key] = list
+    end
+
+    table.insert(list, actor)
+  end
+
+  for _, actor in actors do
+    listed(cast.byId, actor.id, actor)
+    listed(cast.byRace, actor.race, actor)
+    listed(cast.byClass, actor.class, actor)
+  end
+
+  return cast
+end
+
+local Nobody: { Actor } = table.freeze {}
+
+-- The actors both INFOs could be said by, counted, and the first twelve of them. Whatever
+-- either asks of its speaker by name, an id before a race before a class, is asked only of the
+-- actors who have it.
+local function sharedActors(first: Record, second: Record, cast: Cast): (number, { Json })
   local count, sample = 0, report.array()
   local firstAsked, secondAsked = asked(first), asked(second)
-  local named = if firstAsked.speaker ~= '' then firstAsked.speaker else secondAsked.speaker
+  local among = cast.all
 
-  for _, actor in if named ~= '' then byId[named] or {} else actors do
+  if firstAsked.speaker ~= '' then
+    among = cast.byId[firstAsked.speaker] or Nobody
+  elseif secondAsked.speaker ~= '' then
+    among = cast.byId[secondAsked.speaker] or Nobody
+  elseif firstAsked.race ~= '' then
+    among = cast.byRace[firstAsked.race] or Nobody
+  elseif secondAsked.race ~= '' then
+    among = cast.byRace[secondAsked.race] or Nobody
+  elseif firstAsked.class ~= '' then
+    among = cast.byClass[firstAsked.class] or Nobody
+  elseif secondAsked.class ~= '' then
+    among = cast.byClass[secondAsked.class] or Nobody
+  end
+
+  for _, actor in among do
     if actorFits(actor, firstAsked) and actorFits(actor, secondAsked) then
       count += 1
 
@@ -937,8 +981,7 @@ local ComparedFields = {
 local function mutuallyExclusive(
   first: Record,
   second: Record,
-  actors: { Actor },
-  byId: { [string]: { Actor } }
+  cast: Cast
 ): (boolean, { Json }, number?, { Json }?)
   local reasons = report.array()
 
@@ -1015,7 +1058,7 @@ local function mutuallyExclusive(
     end
   end
 
-  local count, sample = sharedActors(first, second, actors, byId)
+  local count, sample = sharedActors(first, second, cast)
 
   if count == 0 then
     table.insert(reasons, 'no_shared_actor_candidate')
@@ -1152,8 +1195,7 @@ local function orderSemantics(
   expected: { string },
   actual: { string },
   expectedInfos: { [string]: Entry },
-  actors: { Actor },
-  byId: { [string]: { Actor } }
+  cast: Cast
 ): { [string]: Json }
   local pairs = inversions(expected, actual)
   local proven, unproven = report.array(), report.array()
@@ -1170,7 +1212,7 @@ local function orderSemantics(
     end
 
     local exclusive, reasons, count, sample =
-      mutuallyExclusive(firstInfo.record, secondInfo.record, actors, byId)
+      mutuallyExclusive(firstInfo.record, secondInfo.record, cast)
     local item = report.object {
       'first',
       pair[1],
@@ -1617,8 +1659,9 @@ function dialogue.audit(
     report.array(), report.array(), report.array(), {}
   local physicalOrder, links, dialogueContent, infoContent =
     report.array(), report.array(), report.array(), report.array()
-  -- The actors by id, made when the first order is found wrong: most audits find none.
-  local actorsById: { [string]: { Actor } }? = nil
+  -- The actors by what an INFO asks of one, listed when the first order is found wrong: most
+  -- audits find none.
+  local cast: Cast? = nil
 
   for _, topic in sorted(projected) do
     local got = standalone.dialogues[topic]
@@ -1663,11 +1706,11 @@ function dialogue.audit(
           firstDifference(expected.order, gotOrder, 'standalone'),
         }
       )
-      local byId = actorsById or actorIndex(actors).byId
-      actorsById = byId
+      local weighed = cast or castOf(actors)
+      cast = weighed
       table.insert(
         semantics,
-        orderSemantics(topic, expected.order, gotOrder, expected.infos, actors, byId)
+        orderSemantics(topic, expected.order, gotOrder, expected.infos, weighed)
       )
     end
 
