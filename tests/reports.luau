@@ -443,13 +443,7 @@ suite.describe('tes3cmd\'s text', function()
     expect(surgery.base64Encode 'abc').toBe 'YWJj'
     expect(surgery.base64Decode 'YW Jj\nZA==').toBe 'abcd'
 
-    local every = {}
-
-    for byte = 0, 255 do
-      every[byte + 1] = string.char(byte)
-    end
-
-    local all = table.concat(every)
+    local all = table.concat([for byte in range(0, 255) => string.char(byte)])
     expect(surgery.bytesField(surgery.toBytesField(all))).toBe(all)
   end)
 end)

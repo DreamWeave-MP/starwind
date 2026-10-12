@@ -72,13 +72,7 @@ end
 
 --- `world`'s `key` source without its records of `kind` named `id`.
 local function without(world: corpus.World, key: string, kind: string, id: string)
-  local kept = {}
-
-  for _, record in world[key] do
-    if record.type ~= kind or record.id ~= id then table.insert(kept, record) end
-  end
-
-  world[key] = kept
+  world[key] = [for record in world[key] if record.type ~= kind or record.id ~= id => record]
 end
 
 suite.describe('build', function()

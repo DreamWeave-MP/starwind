@@ -185,23 +185,11 @@ end
 
 --- `count` things `held` by something: each a number and an id, as tes3conv has an inventory.
 local function inventory(held: { string }, count: number): { Value }
-  local list: { Value } = {}
-
-  for index = 1, count do
-    list[index] = { nextRandom() % 5 + 1, pick(held) }
-  end
-
-  return list
+  return [for _ in range(1, count) => { nextRandom() % 5 + 1, pick(held) }]
 end
 
 local function spells(pools: Pools, count: number): { Value }
-  local list: { Value } = {}
-
-  for index = 1, count do
-    list[index] = pick(pools.spells)
-  end
-
-  return list
+  return [for _ in range(1, count) => pick(pools.spells)]
 end
 
 --- An actor's packages: by turns one that follows or escorts another, one that activates
@@ -305,20 +293,12 @@ local function object(kind: string, id: string, pools: Pools): Record
       inventory = inventory(pools.items, nextRandom() % 5 + 1),
     }
   elseif kind == 'LeveledItem' then
-    local items: { Value } = {}
-
-    for level = 1, nextRandom() % 5 + 2 do
-      items[level] = { pick(pools.items), level }
-    end
-
+    local items: { Value } =
+      [for level in range(1, nextRandom() % 5 + 2) => { pick(pools.items), level }]
     return full { type = 'LeveledItem', id = id, items = items }
   elseif kind == 'LeveledCreature' then
-    local creatures: { Value } = {}
-
-    for level = 1, nextRandom() % 4 + 2 do
-      creatures[level] = { pick(pools.creatures), level }
-    end
-
+    local creatures: { Value } =
+      [for level in range(1, nextRandom() % 4 + 2) => { pick(pools.creatures), level }]
     return full { type = 'LeveledCreature', id = id, creatures = creatures }
   elseif kind == 'Door' then
     return full {
@@ -396,12 +376,7 @@ local function objects(list: Records, stem: string, count: number, pools: Pools)
 end
 
 local function header(fileType: string, masters: { string }): Record
-  local named: { Value } = {}
-
-  for index, name in masters do
-    named[index] = { name, 1 }
-  end
-
+  local named: { Value } = [for name in masters => { name, 1 }]
   return full { type = 'Header', fileType = fileType, masters = named }
 end
 
