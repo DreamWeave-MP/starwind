@@ -689,6 +689,59 @@ local function diffPaths(expected: Value?, actual: Value?, prefix: string, out: 
   end
 end
 
+-- Whether `diffPaths` would find nothing between two values: its rules, with no path made
+-- and no key put in order. A table with a key that isn't a string is left for `diffPaths`.
+local function same(expected: Value?, actual: Value?): boolean
+  if type(expected) == 'number' and type(actual) == 'number' then
+    return sameNumber(expected :: number, actual :: number)
+  end
+
+  if type(expected) ~= type(actual) then return false end
+
+  if type(expected) ~= 'table' then return expected == actual end
+
+  local left, right = expected :: Table, actual :: Table
+
+  if #left > 0 or #right > 0 then
+    if #left ~= #right then return false end
+
+    for index = 1, #left do
+      if not same(left[index], right[index]) then return false end
+    end
+
+    return true
+  end
+
+  for key, item in left do
+    if type(key) ~= 'string' or not same(item, right[key]) then return false end
+  end
+
+  for key in right do
+    if type(key) ~= 'string' or left[key] == nil then return false end
+  end
+
+  return true
+end
+
+-- `same`, of two records without `fields`. A record that is a list is left for `diffPaths`.
+local function sameBut(expected: Record, actual: Record, fields: { string }): boolean
+  if #expected > 0 or #actual > 0 then return false end
+
+  for key, item in expected do
+    if type(key) ~= 'string' then return false end
+
+    if not table.find(fields, key) and not same(item, actual[key]) then return false end
+  end
+
+  for key in actual do
+    if type(key) ~= 'string' then return false end
+
+    if not table.find(fields, key) and expected[key] == nil then return false end
+  end
+
+  return true
+end
+
 local function without(record: Record, fields: { string }): Record
   local copy = table.clone(record)
 
@@ -699,9 +752,16 @@ local function without(record: Record, fields: { string }): Record
   return copy
 end
 
-local function differences(expected: Record, actual: Record): { string }
+local Flags, Links = { 'flags' }, { 'prevId', 'nextId' }
+
+-- The paths at which two records differ, `fields` aside. Nearly every pair the audit compares
+-- is the same, which is told without a copy of either or a path to anything in them.
+local function differences(expected: Record, actual: Record, fields: { string }): { string }
   local out = {}
-  diffPaths(expected, actual, '', out)
+
+  if sameBut(expected, actual, fields) then return out end
+
+  diffPaths(without(expected, fields), without(actual, fields), '', out)
   return out
 end
 
@@ -1614,19 +1674,14 @@ function dialogue.audit(
       )
     end
 
-    if
-      #differences(without(expected.record, { 'flags' }), without(got.record, { 'flags' })) > 0
-    then
+    if #differences(expected.record, got.record, Flags) > 0 then
       table.insert(dialogueContent, report.object { 'dialogue_id', topic })
     end
 
     for _, id in sorted(expectedSet) do
       if not gotSet[id] then continue end
 
-      local paths = differences(
-        without(expected.infos[id].record, { 'prevId', 'nextId' }),
-        without(got.infos[id].record, { 'prevId', 'nextId' })
-      )
+      local paths = differences(expected.infos[id].record, got.infos[id].record, Links)
 
       if #paths > 0 then
         table.insert(
