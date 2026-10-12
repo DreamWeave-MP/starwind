@@ -21,6 +21,7 @@
 --     in the cell as persistent. tes3cmd's attempt to rewrite the count never finds it.
 -- Matching is case-insensitive throughout, as tes3cmd's is.
 
+local bytes = require '@dream/bytes'
 local tes3 = require '@tes3conv/records'
 local tes3conv = require '@tes3conv'
 
@@ -354,26 +355,7 @@ local function base64Decode(text: string): string
   return table.concat(bytes)
 end
 
-local function base64Encode(data: string): string
-  local parts = {}
-
-  for index = 1, #data, 3 do
-    local first, second, third = string.byte(data, index, index + 2)
-    local value = bit32.lshift(first, 16) + bit32.lshift(second or 0, 8) + (third or 0)
-
-    local function digit(shift: number): string
-      local at = bit32.band(bit32.rshift(value, shift), 63) + 1
-      return string.sub(Base64, at, at)
-    end
-
-    table.insert(
-      parts,
-      digit(18) .. digit(12) .. (second and digit(6) or '=') .. (third and digit(0) or '=')
-    )
-  end
-
-  return table.concat(parts)
-end
+local function base64Encode(data: string): string return bytes.toBase64(data) end
 
 surgery.base64Decode = base64Decode
 surgery.base64Encode = base64Encode
@@ -512,16 +494,15 @@ function surgery.deleteInventory(records: Records, id: string, text: string): nu
   for index, record in records do
     if record.type ~= 'Container' or surgery.id(record) ~= string.lower(id) then continue end
 
-    local inventory = {}
+    local held = (record.inventory or {}) :: { Table }
 
-    for _, entry in (record.inventory or {}) :: { Table } do
-      if tes3.containsNoCase(`Count:{entry[1]}  Object:{tes3.string(entry[2])}`, text) then
-        deleted += 1
-      else
-        table.insert(inventory, entry)
-      end
-    end
+    local inventory = [
+      for entry in held
+      if not tes3.containsNoCase(`Count:{entry[1]}  Object:{tes3.string(entry[2])}`, text)
+      => entry
+    ]
 
+    deleted += #held - #inventory
     local copy = rebuilt(record)
     copy.inventory = inventory
     records[index] = copy
