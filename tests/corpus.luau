@@ -1,0 +1,1128 @@
+--!strict
+-- A sw_merged folder made up for the suite and the bench: the thirteen sources of the Definitive
+-- build, each with what the build does something to in its namesake, and whole enough that the
+-- build of them passes every check it makes. The same shape makes the same folder, byte for byte.
+--
+-- What the sources hold:
+--   * Morrowind: objects of every type the build follows, each naming what its type names, the
+--     regions Starwind reuses, cells of references (read lazily, and never read by a build that
+--     passes), and topics with their chains of INFOs for a speaker, a race, a class, a faction, or
+--     anyone, some filtered on a global. Tribunal and Bloodmoon change, move, add to, and delete
+--     from those topics, and have objects of their own.
+--   * V1.15: the main quest's anchors, objects and actors of its own that name its own things and
+--     Morrowind's, cells of references, topics of its own, and its hand in Morrowind's topics: an
+--     INFO copied exactly, one copied but for its links, one changed, one deleted, one deleted
+--     that Morrowind deleted already, one deleted that nothing has, and new ones, one of them said
+--     by an actor of Morrowind's that nothing else of Starwind's names.
+--   * the Patch and the mods merged into it: more of the same, over V1.15, with references of
+--     V1.15's cells moved and deleted.
+--   * what the reviewed edits are aimed at, each in the source it is edited in: the dead classes,
+--     the junk and exterior cells, the misspelled script, the Patch's stray records, the leveled
+--     list's entry, Enhanced's and the Patch's doubled references, the orphaned body parts, and
+--     Naboo's scripts and junk.
+local bytes = require '@dream/bytes'
+local core = require '@tes3'
+local starwind = require '@starwind'
+local tes3 = require '@tes3conv/records'
+local tes3conv = require '@tes3conv'
+
+type Table = tes3.Table
+type Value = tes3.Value
+type Record = tes3.Record
+type Records = tes3.Records
+
+export type Shape = {
+  --- Morrowind's objects. Tribunal has a quarter as many and Bloodmoon an eighth.
+  objects: number,
+  --- Morrowind's topics, each of `infos` INFOs (eight at least), a greeting of four times as
+  --- many; and its cells, each of `references`.
+  topics: number,
+  infos: number,
+  vanillaCells: number,
+  --- V1.15's own objects, actors, cells of `references`, and topics of six INFOs. The Patch has
+  --- a quarter as many of each, and each mod merged into it an eighth.
+  own: number,
+  actors: number,
+  cells: number,
+  references: number,
+  ownTopics: number,
+}
+
+--- Each source's records, header first, by the source's key in `@starwind`'s `sources.Included`.
+export type World = { [string]: Records }
+
+local corpus = {}
+
+local random = 0
+
+local function nextRandom(): number
+  random = bit32.bxor(random, bit32.lshift(random, 13))
+  random = bit32.bxor(random, bit32.rshift(random, 17))
+  random = bit32.bxor(random, bit32.lshift(random, 5))
+  return random
+end
+
+local function pick(list: { string }): string return list[nextRandom() % #list + 1] end
+
+--- One of `list` once in `oneIn` times, and otherwise no id.
+local function maybe(list: { string }, oneIn: number): string
+  if nextRandom() % oneIn ~= 0 then return '' end
+
+  return pick(list)
+end
+
+--- A record of its type with every field the type has, `fields` over the type's defaults: what
+--- the plugin encoder needs of one, and what a plugin read back holds.
+local function full(fields: Record): Record
+  local kind = fields.type :: string
+  local record = assert(core.default(kind), `no record type {kind}`) :: Record
+
+  for key, value in fields do
+    record[key] = value
+  end
+
+  return record
+end
+
+local Words =
+  { 'ex', 'in', 'furn', 'flora', 'terrain', 'common', 'de', 'hlaalu', 'redoran', 'telvanni' }
+
+-- What a source's objects are, as often as each is listed.
+local Kinds = {
+  'Static',
+  'Static',
+  'Static',
+  'Static',
+  'Activator',
+  'Door',
+  'Sound',
+  'Sound',
+  'Script',
+  'Script',
+  'Spell',
+  'Spell',
+  'Enchanting',
+  'Bodypart',
+  'Bodypart',
+  'MiscItem',
+  'MiscItem',
+  'Weapon',
+  'Weapon',
+  'Book',
+  'Armor',
+  'Clothing',
+  'Light',
+  'Ingredient',
+  'Container',
+  'Container',
+  'LeveledItem',
+  'LeveledCreature',
+  'Creature',
+  'Creature',
+  'Npc',
+  'Npc',
+  'Npc',
+  'Faction',
+  'SoundGen',
+  'GlobalVariable',
+}
+
+-- The ids an object can name, by what names them.
+type Pools = { [string]: { string } }
+
+local PoolOf: { [string]: string } = {
+  Static = 'statics',
+  Door = 'statics',
+  Activator = 'activators',
+  Sound = 'sounds',
+  Script = 'scripts',
+  Spell = 'spells',
+  Enchanting = 'enchantings',
+  Bodypart = 'bodyparts',
+  MiscItem = 'items',
+  Weapon = 'items',
+  Book = 'items',
+  Armor = 'items',
+  Clothing = 'items',
+  Light = 'items',
+  Ingredient = 'items',
+  LeveledItem = 'items',
+  Container = 'holders',
+  Creature = 'creatures',
+  LeveledCreature = 'leveled',
+  Npc = 'actors',
+  Faction = 'factions',
+  SoundGen = 'generators',
+  GlobalVariable = 'globals',
+}
+
+local Placed: { [string]: boolean } = {
+  statics = true,
+  activators = true,
+  items = true,
+  holders = true,
+  creatures = true,
+  leveled = true,
+  actors = true,
+}
+
+local function newPools(): Pools
+  local pools: Pools = { placed = {}, races = {}, classes = {}, topics = {} }
+
+  for _, name in PoolOf do
+    pools[name] = pools[name] or {}
+  end
+
+  return pools
+end
+
+local function add(pools: Pools, kind: string, id: string)
+  local name = PoolOf[kind]
+  table.insert(pools[name], id)
+
+  if Placed[name] then table.insert(pools.placed, id) end
+end
+
+--- `count` things `held` by something: each a number and an id, as tes3conv has an inventory.
+local function inventory(held: { string }, count: number): { Value }
+  local list: { Value } = {}
+
+  for index = 1, count do
+    list[index] = { nextRandom() % 5 + 1, pick(held) }
+  end
+
+  return list
+end
+
+local function spells(pools: Pools, count: number): { Value }
+  local list: { Value } = {}
+
+  for index = 1, count do
+    list[index] = pick(pools.spells)
+  end
+
+  return list
+end
+
+--- An actor's packages: by turns one that follows or escorts another, one that activates
+--- something, and none.
+local function packages(pools: Pools): { Value }
+  local turn = nextRandom() % 4
+
+  if turn == 3 then return {} end
+
+  if turn == 2 then return { { type = 'Activate', target = pick(pools.activators), reset = 1 } } end
+
+  return {
+    {
+      type = if turn == 1 then 'Escort' else 'Follow',
+      target = pick(pools.actors),
+      cell = '',
+      duration = 0,
+      location = { 0, 0, 0 },
+      reset = 1,
+    },
+  }
+end
+
+-- What a script's lines are like, none of them adding a topic.
+local ScriptLines = {
+  'if ( MenuMode == 1 )',
+  '\treturn',
+  'endif',
+  '',
+  'if ( GetDistance Player < 256 )',
+  '\tset timer to ( timer + GetSecondsPassed )',
+  '; wait until the player has had the topic added',
+  'MessageBox "Nothing happens."',
+  'Journal "sw_quest" 10',
+  'set done to 1',
+  'PlaySound3D "Door Stone Open"',
+  'if ( OnActivate == 1 )',
+  '\tActivate',
+}
+
+--- A script the length scripts are, ended as the Construction Set ends them, with `extra` among
+--- its lines.
+local function script(id: string, extra: { string }?): Record
+  local lines = { `begin {id}`, '', 'short done', 'float timer', '' }
+
+  for _ = 1, nextRandom() % 24 + 6 do
+    table.insert(lines, pick(ScriptLines))
+  end
+
+  for _, line in extra or {} do
+    table.insert(lines, line)
+  end
+
+  table.insert(lines, 'end')
+  local made = full { type = 'Script', id = id, text = table.concat(lines, '\r\n') }
+  local sizes = made.header :: Table
+  -- Four bytes of bytecode, as tes3conv spells them: the base64 of their length and the bytes.
+  made.bytecode, sizes.bytecodeLength = 'BAAAAF8RAQE=', 4
+  return made
+end
+
+--- An object of `kind` naming what one of its kind names, out of `pools`.
+local function object(kind: string, id: string, pools: Pools): Record
+  local pool = PoolOf[kind]
+
+  if kind == 'Script' then
+    return script(id)
+  elseif kind == 'Npc' then
+    return full {
+      type = 'Npc',
+      id = id,
+      name = id,
+      script = maybe(pools.scripts, 6),
+      race = pick(pools.races),
+      class = pick(pools.classes),
+      faction = maybe(pools.factions, 3),
+      head = pick(pools.bodyparts),
+      hair = pick(pools.bodyparts),
+      npcFlags = if nextRandom() % 2 == 0 then 'FEMALE' else '',
+      inventory = inventory(pools.items, nextRandom() % 5 + 1),
+      spells = spells(pools, nextRandom() % 3),
+      aiPackages = packages(pools),
+    }
+  elseif kind == 'Creature' then
+    return full {
+      type = 'Creature',
+      id = id,
+      name = id,
+      script = maybe(pools.scripts, 8),
+      inventory = inventory(pools.items, nextRandom() % 3),
+      spells = spells(pools, nextRandom() % 3),
+      aiPackages = packages(pools),
+      sound = maybe(pools.creatures, 2),
+    }
+  elseif kind == 'Container' then
+    return full {
+      type = 'Container',
+      id = id,
+      name = id,
+      script = maybe(pools.scripts, 8),
+      inventory = inventory(pools.items, nextRandom() % 5 + 1),
+    }
+  elseif kind == 'LeveledItem' then
+    local items: { Value } = {}
+
+    for level = 1, nextRandom() % 5 + 2 do
+      items[level] = { pick(pools.items), level }
+    end
+
+    return full { type = 'LeveledItem', id = id, items = items }
+  elseif kind == 'LeveledCreature' then
+    local creatures: { Value } = {}
+
+    for level = 1, nextRandom() % 4 + 2 do
+      creatures[level] = { pick(pools.creatures), level }
+    end
+
+    return full { type = 'LeveledCreature', id = id, creatures = creatures }
+  elseif kind == 'Door' then
+    return full {
+      type = 'Door',
+      id = id,
+      name = id,
+      script = maybe(pools.scripts, 8),
+      openSound = maybe(pools.sounds, 2),
+      closeSound = maybe(pools.sounds, 2),
+    }
+  elseif kind == 'Bodypart' then
+    return full { type = 'Bodypart', id = id, race = pick(pools.races) }
+  elseif kind == 'Faction' then
+    return full {
+      type = 'Faction',
+      id = id,
+      name = id,
+      reactions = { { faction = pick(pools.factions), reaction = 1 } },
+    }
+  elseif kind == 'SoundGen' then
+    return full {
+      type = 'SoundGen',
+      id = id,
+      creature = pick(pools.creatures),
+      sound = pick(pools.sounds),
+    }
+  elseif kind == 'Sound' then
+    return full { type = 'Sound', id = id, soundPath = `fx\\{id}.wav` }
+  elseif kind == 'GlobalVariable' or kind == 'Spell' or kind == 'Enchanting' then
+    return full { type = kind, id = id }
+  elseif kind == 'Static' then
+    return full { type = 'Static', id = id, mesh = `x\\{id}.nif` }
+  end
+
+  local record = full { type = kind, id = id, name = id, script = maybe(pools.scripts, 4) }
+
+  if kind == 'Light' then record.sound = maybe(pools.sounds, 2) end
+
+  if pool == 'items' and kind ~= 'MiscItem' and kind ~= 'Light' and kind ~= 'Ingredient' then
+    record.enchanting = maybe(pools.enchantings, 3)
+  end
+
+  if kind == 'Armor' or kind == 'Clothing' then
+    record.bipedObjects = {
+      {
+        bipedObjectType = 'Chest',
+        maleBodypart = pick(pools.bodyparts),
+        femaleBodypart = maybe(pools.bodyparts, 2),
+      },
+    }
+  end
+
+  return record
+end
+
+--- Adds `count` objects to `list`, their ids starting `stem`, each naming what the pools held
+--- before it and what the others add. Every tenth has the flags a record can have and stay.
+local function objects(list: Records, stem: string, count: number, pools: Pools)
+  local ids: { string }, types: { string } = {}, {}
+
+  -- One of each, so that no pool an object draws from is empty.
+  for index = 1, count do
+    types[index] = if index <= #Kinds then Kinds[index] else pick(Kinds)
+    ids[index] = `{stem}{pick(Words)}_{pick(Words)}_{index}`
+    add(pools, types[index], ids[index])
+  end
+
+  for index = 1, count do
+    local made = object(types[index], ids[index], pools)
+
+    if index % 10 == 0 then made.flags = 'PERSISTENT | BLOCKED' end
+
+    table.insert(list, made)
+  end
+end
+
+local function header(fileType: string, masters: { string }): Record
+  local named: { Value } = {}
+
+  for index, name in masters do
+    named[index] = { name, 1 }
+  end
+
+  return full { type = 'Header', fileType = fileType, masters = named }
+end
+
+local function reference(place: number, id: string, persistent: boolean): Table
+  return {
+    mastIndex = 0,
+    refrIndex = place,
+    id = id,
+    temporary = not persistent,
+    translation = { nextRandom() % 8192, nextRandom() % 8192, nextRandom() % 1024 },
+    rotation = { 0, 0, 0 },
+  }
+end
+
+local function interior(name: string, references: { Value }): Record
+  return full {
+    type = 'Cell',
+    name = name,
+    data = { flags = 'IS_INTERIOR', grid = { 0, 0 } },
+    references = references,
+  }
+end
+
+local function exterior(column: number, row: number, region: string, references: { Value }): Record
+  return full {
+    type = 'Cell',
+    name = '',
+    region = region,
+    data = { flags = '', grid = { column, row } },
+    references = references,
+  }
+end
+
+--- `count` references to what `pools` can place, a quarter of them persistent and those first,
+--- as a plugin has them: some owned, and some with a key, a trap, or a soul.
+local function placed(pools: Pools, count: number): { Value }
+  local references: { Value } = {}
+
+  for place = 1, count do
+    local made = reference(place, pick(pools.placed), place * 4 <= count)
+
+    if place % 8 == 0 then made.owner = pick(pools.actors) end
+
+    if place % 16 == 1 then made.ownerFaction = pick(pools.factions) end
+
+    if place % 32 == 2 then made.key = pick(pools.items) end
+
+    if place % 32 == 3 then made.trap = pick(pools.spells) end
+
+    if place % 64 == 4 then made.soul = pick(pools.creatures) end
+
+    references[place] = made
+  end
+
+  return references
+end
+
+local function topic(id: string, kind: string): Record
+  return full { type = 'Dialogue', id = id, dialogueType = kind }
+end
+
+local function info(id: string, previous: string, following: string, kind: string): Record
+  local made = full {
+    type = 'DialogueInfo',
+    id = id,
+    prevId = previous,
+    nextId = following,
+    text = `says {id}`,
+  }
+  local data = made.data :: Table
+  data.dialogueType = kind
+  return made
+end
+
+local Comparisons = { 'Equal', 'NotEqual', 'Less', 'LessEqual', 'Greater', 'GreaterEqual' }
+
+--- Says who an INFO is for: by turns anyone, an actor, a race, a class, both, a faction, and one
+--- sex; and one in four on a global besides. `speaker` is whether it may name an actor.
+local function said(line: Record, pools: Pools, speaker: boolean): Record
+  local turn = nextRandom() % 10
+  local data = line.data :: Table
+
+  if turn == 2 or turn == 3 then
+    if speaker then line.speakerId = pick(pools.actors) end
+  elseif turn == 4 then
+    line.speakerRace = pick(pools.races)
+  elseif turn == 5 then
+    line.speakerClass = pick(pools.classes)
+  elseif turn == 6 then
+    line.speakerRace, line.speakerClass = pick(pools.races), pick(pools.classes)
+  elseif turn == 7 then
+    line.speakerFaction = pick(pools.factions)
+    data.speakerRank = nextRandom() % 3
+  elseif turn == 8 then
+    data.speakerSex = if nextRandom() % 2 == 0 then 'Male' else 'Female'
+  elseif turn == 9 then
+    line.playerFaction = 'FFFF'
+  end
+
+  if nextRandom() % 4 == 0 then
+    line.filters = {
+      {
+        index = 0,
+        filterType = 'Global',
+        ['function'] = 'Global',
+        comparison = pick(Comparisons),
+        id = pick(pools.globals),
+        value = { type = 'Float', data = nextRandom() % 4 },
+      },
+    }
+  end
+
+  return line
+end
+
+-- A master's topics by turns: the greetings, which are several times as long as the others, the
+-- other two kinds the engine asks for itself, a journal, and topics.
+local TopicKinds = { 'Greeting', 'Voice', 'Persuasion', 'Journal' }
+
+local function topicKind(index: number): string return TopicKinds[index % 16 + 1] or 'Topic' end
+
+--- Morrowind's `index`th topic's stem: what its INFOs' ids start with.
+local function stemOf(index: number): string return `{index}0` end
+
+--- Morrowind, and what its topics hold: each topic's INFOs by their place in its chain.
+local function morrowind(shape: Shape, pools: Pools): (Records, { { Record } })
+  local list: Records = { header('Esm', {}) }
+
+  for index = 1, 6 do
+    local id = `race {index}`
+    table.insert(pools.races, id)
+    table.insert(list, full { type = 'Race', id = id, name = id })
+  end
+
+  for index = 1, 10 do
+    local id = `class {index}`
+    table.insert(pools.classes, id)
+    table.insert(list, full { type = 'Class', id = id, name = id })
+  end
+
+  for _, id in { 'Bard', 'Pilgrim', 'Witch' } do
+    table.insert(list, full { type = 'Class', id = id, name = id })
+  end
+
+  for index = 1, math.max(shape.objects // 16, 4) do
+    local id = `sSetting{index}`
+    local value = { type = 'String', data = id }
+    table.insert(list, full { type = 'GameSetting', id = id, value = value })
+  end
+
+  objects(list, '', shape.objects, pools)
+
+  for _, effect in { 'WaterBreathing', 'Shield', 'Light', 'TurnUndead' } do
+    table.insert(
+      list,
+      full {
+        type = 'MagicEffect',
+        effectId = effect,
+        castSound = pick(pools.sounds),
+        boltSound = maybe(pools.sounds, 2),
+        hitSound = pick(pools.sounds),
+        castVisual = pick(pools.statics),
+        hitVisual = pick(pools.statics),
+      }
+    )
+  end
+
+  for position, pair in starwind.sources.RegionSleepCreatures do
+    if position % 4 == 2 then continue end
+
+    local creatures: { Value } = { { pick(pools.creatures), 1 } }
+    table.insert(list, full { type = 'LeveledCreature', id = pair[2], creatures = creatures })
+    table.insert(
+      list,
+      full {
+        type = 'Region',
+        id = pair[1],
+        name = pair[1],
+        sleepCreature = pair[2],
+        sounds = { { pick(pools.sounds), 10 } },
+      }
+    )
+  end
+
+  for index = 1, shape.vanillaCells do
+    table.insert(list, interior(`Vault {index}`, placed(pools, shape.references)))
+    table.insert(list, exterior(index, -index, 'Ascadian Isles Region', placed(pools, 4)))
+  end
+
+  local chains: { { Record } } = {}
+
+  for index = 1, shape.topics do
+    local kind = topicKind(index)
+    local stem = stemOf(index)
+    local count = if kind == 'Greeting' then shape.infos * 4 else shape.infos
+    local chain: { Record } = {}
+    table.insert(pools.topics, `topic {index}`)
+    table.insert(list, topic(`topic {index}`, kind))
+
+    for place = 1, count do
+      local previous = if place > 1 then `{stem}{place - 1}` else ''
+      local following = if place < count then `{stem}{place + 1}` else ''
+      -- The sixth is the one Starwind copies but for its links: an actor it named would be
+      -- imported for that copy alone.
+      local line = said(info(`{stem}{place}`, previous, following, kind), pools, place ~= 6)
+
+      if place % 40 == 0 then line.flags = 'DELETED' end
+
+      chain[place] = line
+      table.insert(list, line)
+    end
+
+    chains[index] = chain
+  end
+
+  -- Three of the INFOs behind the dead faction references, pruned before decoupling.
+  table.insert(list, topic('morag tong', 'Topic'))
+
+  for position = 1, 3 do
+    local line = info(starwind.sources.DeadVanillaFactionInfos[position], '', '', 'Topic')
+    line.speakerFaction = 'Morag Tong'
+    table.insert(list, line)
+  end
+
+  return list, chains
+end
+
+--- An expansion: objects of its own, and its hand in Morrowind's topics. Tribunal changes an INFO
+--- where it stands, moves one down the chain, and puts one between two; Bloodmoon puts one at
+--- the front and deletes one.
+local function expansion(shape: Shape, pools: Pools, tribunal: boolean): Records
+  local list: Records = { header('Esm', { 'Morrowind.esm' }) }
+  local prefix, share = if tribunal then 'tr_' else 'bm_', if tribunal then 4 else 8
+  objects(list, prefix, shape.objects // share, pools)
+
+  if not tribunal then
+    for position, pair in starwind.sources.RegionSleepCreatures do
+      if position % 4 ~= 2 then continue end
+
+      local region, sleeper = pair[1], pair[2]
+      local creatures: { Value } = { { pick(pools.creatures), 1 } }
+      table.insert(list, full { type = 'LeveledCreature', id = sleeper, creatures = creatures })
+      table.insert(list, full { type = 'Region', id = region, name = region, sleepCreature = sleeper })
+    end
+  end
+
+  for index = 1, shape.topics do
+    local kind = topicKind(index)
+    local stem = stemOf(index)
+
+    if tribunal and index % 3 == 0 then
+      table.insert(list, topic(`TOPIC {index}`, kind))
+      table.insert(list, said(info(`{stem}2`, `{stem}1`, `{stem}3`, kind), pools, true))
+      table.insert(list, said(info(`{stem}3`, `{stem}5`, `{stem}6`, kind), pools, true))
+      table.insert(list, said(info(`tr{stem}1`, `{stem}1`, `{stem}2`, kind), pools, true))
+    elseif not tribunal and index % 7 == 0 then
+      local gone = info(`{stem}4`, `{stem}3`, `{stem}5`, kind)
+      gone.flags = 'DELETED'
+      table.insert(list, topic(`topic {index}`, kind))
+      table.insert(list, said(info(`bm{stem}1`, '', `{stem}1`, kind), pools, true))
+      table.insert(list, gone)
+    end
+  end
+
+  return list
+end
+
+local function linked(record: Record, previous: string, following: string): Record
+  local copy = tes3.deepCopy(record)
+  copy.prevId, copy.nextId = previous, following
+  return copy
+end
+
+--- A Starwind source's hand in Morrowind's `index`th topic, whose chain is `chain`: an exact
+--- copy, a copy but for its links, a changed one, a deleted one, one deleted that nothing has,
+--- and a new one after the second, which `late`, an actor of Morrowind's, says.
+local function edits(list: Records, index: number, chain: { Record }, stem: string, late: string?)
+  local theirs = stemOf(index)
+  local changed = tes3.deepCopy(chain[7])
+  changed.text = `{stem} says otherwise`
+  local deleted = tes3.deepCopy(chain[8])
+  deleted.flags = 'DELETED'
+  local orphan = info(`{stem}{theirs}9`, '', '', topicKind(index))
+  orphan.flags = 'DELETED'
+  local new = info(`{stem}{theirs}1`, `{theirs}2`, `{theirs}3`, topicKind(index))
+  new.speakerId = late or ''
+
+  table.insert(list, topic(`Topic {index}`, topicKind(index)))
+  table.insert(list, tes3.deepCopy(chain[5]))
+  table.insert(list, linked(chain[6], `{theirs}4`, `{theirs}7`))
+  table.insert(list, changed)
+  table.insert(list, deleted)
+  table.insert(list, orphan)
+  table.insert(list, new)
+
+  if chain[40] then table.insert(list, tes3.deepCopy(chain[40])) end
+end
+
+--- Topics of a source's own, each of six INFOs its own actors say.
+local function ownTopics(list: Records, stem: string, count: number, mine: Pools)
+  for index = 1, count do
+    local base = `{stem}{index}00`
+    table.insert(mine.topics, `{stem} topic {index}`)
+    table.insert(list, topic(`{stem} topic {index}`, 'Topic'))
+
+    for place = 1, 6 do
+      local previous = if place > 1 then `{base}{place - 1}` else ''
+      local following = if place < 6 then `{base}{place + 1}` else ''
+      table.insert(list, said(info(`{base}{place}`, previous, following, 'Topic'), mine, true))
+    end
+  end
+end
+
+--- What a Starwind source's own things can name: its own and those of the sources before it,
+--- and one in six of the masters'.
+local function mineOf(pools: Pools): Pools
+  local mine = newPools()
+  mine.races, mine.classes = pools.races, pools.classes
+
+  for name, ids in pools do
+    if name == 'races' or name == 'classes' then continue end
+
+    for index = 6, #ids, 6 do
+      table.insert(mine[name], ids[index])
+    end
+  end
+
+  return mine
+end
+
+-- The masters a Starwind source has, in the order the build stages them.
+local Masters = { 'Morrowind.esm', 'Tribunal.esm', 'Bloodmoon.esm' }
+local V115, Patch = 'StarwindRemasteredV1.15.esm', 'StarwindRemasteredPatch.esm'
+
+--- V1.15: the anchors, its own objects, actors, cells, and topics, its hand in every fifth of
+--- Morrowind's topics, and what the reviewed edits are aimed at.
+local function remastered(
+  shape: Shape,
+  pools: Pools,
+  mine: Pools,
+  chains: { { Record } }
+): Records
+  local list: Records = { header('Esm', Masters) }
+  objects(list, 'sw_', shape.own, mine)
+
+  for index = 1, shape.actors do
+    local id = `sw_actor_{index}`
+    table.insert(mine.actors, id)
+    table.insert(mine.placed, id)
+  end
+
+  for index = 1, shape.actors do
+    table.insert(list, object('Npc', `sw_actor_{index}`, mine))
+  end
+
+  local anchors: { string } = {}
+
+  for _, anchor in starwind.sources.MainQuestAnchors do
+    local kind, id = anchor[1], anchor[2]
+
+    if kind == 'Script' then
+      table.insert(list, script(id, { 'MessageBox "Who\'s ship is this?"' }))
+    elseif kind == 'Npc' then
+      table.insert(anchors, id)
+      table.insert(list, object('Npc', id, mine))
+    else
+      table.insert(list, topic(id, 'Topic'))
+      local line = info(`{id}01`, '', '', 'Topic')
+      line.speakerId = anchors[#anchors]
+      table.insert(list, line)
+    end
+  end
+
+  for index = 1, shape.cells do
+    table.insert(list, interior(`Hangar {index}`, placed(mine, shape.references)))
+  end
+
+  local quester = reference(1, 'SW_ShipQuester', true)
+  table.insert(list, interior('Taris, Hangar', { quester, reference(2, pick(mine.placed), false) }))
+
+  -- The reviewed edits' targets.
+  table.insert(list, full { type = 'Class', id = 'Miner', name = 'Miner' })
+  table.insert(list, full { type = 'Activator', id = 'sw_asteroid', name = 'Asteriod' })
+  table.insert(list, full { type = 'Static', id = 'SW_In_TableGround', mesh = 'x\\table.nif' })
+  table.insert(list, full { type = 'Static', id = 'SW_SignCantina', mesh = 'x\\sign.nif' })
+  table.insert(list, full { type = 'Door', id = 'in_t_door_small', script = 'DoNothing' })
+  table.insert(list, interior('Dantooine', placed(mine, 3)))
+  table.insert(list, interior('TestCell', placed(mine, 3)))
+  table.insert(list, full { type = 'PathGrid', cell = 'Dantooine' })
+  table.insert(list, exterior(3, -4, 'Tatooine Region', placed(mine, 4)))
+  table.insert(list, exterior(3, -5, '', placed(mine, 4)))
+  local sand: { Value } =
+    { { pick(mine.creatures), 1 }, { 'SW_Rakhoul1', 5 }, { pick(mine.creatures), 3 } }
+  table.insert(list, full { type = 'LeveledCreature', id = 'sw_sandcreatures', creatures = sand })
+
+  for position, pair in starwind.sources.RegionSleepCreatures do
+    if position % 2 == 0 then continue end
+
+    local region, sleeper = pair[1], pair[2]
+    table.insert(list, full { type = 'Region', id = region, name = region, sleepCreature = sleeper })
+  end
+
+  ownTopics(list, 'sw', shape.ownTopics, mine)
+
+  -- Actors of Morrowind's that only a new INFO of Starwind's names.
+  local late = 0
+
+  for index = 5, shape.topics, 5 do
+    late += 1
+    edits(list, index, chains[index], 'sw', if late % 2 == 0 then pools.actors[late * 7] else nil)
+  end
+
+  for index = 1, math.max(shape.topics // 8, 1) do
+    table.insert(
+      list,
+      script(`sw_topics_{index}`, {
+        '; AddTopic "topic 1"',
+        `  AddTopic "topic {index * 8 - 1}"`,
+        `addtopic topic{index}`,
+        `AddTopic "Topic {index * 8 - 3}"`,
+      })
+    )
+  end
+
+  return list
+end
+
+--- The Patch: its own things over V1.15's, references of V1.15's cells moved and deleted, its
+--- hand in every tenth of Morrowind's topics and in V1.15's own, and its stray records.
+local function patch(shape: Shape, mine: Pools, chains: { { Record } }): Records
+  local masters = table.clone(Masters)
+  table.insert(masters, V115)
+  local list: Records = { header('Esm', masters) }
+  objects(list, 'swp_', shape.own // 4, mine)
+
+  for index = 1, shape.cells // 4 do
+    table.insert(list, interior(`Patch Bay {index}`, placed(mine, shape.references)))
+  end
+
+  for index = 1, shape.cells // 2 do
+    local moved = reference(2, pick(mine.placed), true)
+    moved.mastIndex = 4
+    local gone = reference(3, pick(mine.placed), true)
+    gone.mastIndex, gone.deleted = 4, true
+    local added = reference(1, pick(mine.placed), false)
+    table.insert(list, interior(`Hangar {index}`, { moved, gone, added }))
+  end
+
+  --- A reference to something of the Patch's own, for a cell to keep when the rest go.
+  local function beside(place: number): Table return reference(place, pick(mine.placed), false) end
+
+  table.insert(list, script('sw_'))
+  table.insert(list, script('sw_shipscript', { 'MessageBox "who\'s ship?"' }))
+  table.insert(list, full { type = 'Weapon', id = 'sw_grplasm', name = '44mm Pasma Grenade' })
+  table.insert(
+    list,
+    full {
+      type = 'GameSetting',
+      id = 'sEffectTurnUndead',
+      value = { type = 'String', data = 'Turn Droid' },
+    }
+  )
+  table.insert(list, full { type = 'MagicEffect', effectId = 'TurnUndead' })
+  table.insert(
+    list,
+    full {
+      type = 'LeveledCreature',
+      id = 'sw_sandcreatures',
+      creatures = { { pick(mine.creatures), 1 }, { 'SW_Rakhoul1', 5 } },
+    }
+  )
+  table.insert(list, exterior(7, 7, 'Tatooine Region', placed(mine, 4)))
+
+  local plaza = reference(8517, 'SW_In_TableGround', true)
+  table.insert(list, interior('Taris, Central Plaza', { plaza, beside(1) }))
+
+  local office, tower =
+    'Taris, Central Plaza: Government Office', 'Taris, Central Plaza: Capital Tower Upper Level'
+
+  for _, name in { office, tower } do
+    local desk = reference(1, 'SW_In_TableGround', true)
+    table.insert(list, interior(name, { desk, beside(2) }))
+  end
+
+  local sign = reference(1, 'SW_SignCantina', true)
+  table.insert(list, interior('Taris, Upper City Cantina', { sign, beside(2) }))
+
+  local parked = reference(1, pick(mine.placed), true)
+  parked.translation = { 9336, 12, 40 }
+  table.insert(list, interior('Nar Shaddaa, Lower City', { parked, beside(2) }))
+
+  local customs = reference(1, 'SW_SignCantina', true)
+  table.insert(list, interior('Nar Shaddaa, Customs', { customs, beside(2) }))
+
+  ownTopics(list, 'swp', shape.ownTopics // 4, mine)
+
+  for index = 10, shape.topics, 10 do
+    edits(list, index, chains[index], 'swp', nil)
+  end
+
+  -- The INFO a topic ends with, a second time.
+  table.insert(list, tes3.deepCopy(list[#list]))
+  return list
+end
+
+--- A mod merged into the Patch: a few things of its own, a cell, and topics.
+local function mod(shape: Shape, stem: string, mine: Pools, masters: { string }): Records
+  local list: Records = { header('Esp', masters) }
+  objects(list, `{stem}_`, math.max(shape.own // 8, #Kinds), mine)
+
+  for index = 1, math.max(shape.cells // 8, 1) do
+    local references = placed(mine, math.max(shape.references // 2, 4))
+    table.insert(list, interior(`{stem} Room {index}`, references))
+  end
+
+  ownTopics(list, stem, math.max(shape.ownTopics // 8, 1), mine)
+  return list
+end
+
+corpus.full = full
+
+--- The folder's sources, by key, each a list of records with its header first.
+function corpus.world(shape: Shape): World
+  assert(shape.infos >= 8, 'a topic needs eight INFOs for a source to have its hand in')
+  random = 0x2545f491
+  local pools = newPools()
+  local world: World = {}
+  local chains: { { Record } }
+  world.Morrowind, chains = morrowind(shape, pools)
+  world.Tribunal = expansion(shape, pools, true)
+  world.Bloodmoon = expansion(shape, pools, false)
+
+  local minimal: Records = { header('Esp', {}) }
+
+  for index = 1, 4 do
+    table.insert(minimal, full { type = 'Static', id = `min_static_{index}`, mesh = 'x\\min.nif' })
+  end
+
+  table.insert(
+    minimal,
+    full { type = 'GameSetting', id = 'sMinimal', value = { type = 'String', data = 'Minimal' } }
+  )
+  table.insert(minimal, interior('igtestcell', { reference(1, 'min_static_1', false) }))
+  table.insert(minimal, exterior(0, 0, '', { reference(1, 'min_static_2', false) }))
+  table.insert(minimal, full { type = 'Landscape', grid = { 0, 0 } })
+  table.insert(
+    minimal,
+    full { type = 'LandscapeTexture', id = 'Tx_Minimal.tga', index = 0, fileName = 'Tx_Minimal.tga' }
+  )
+  world.Minimal = minimal
+
+  local mine = mineOf(pools)
+  world.V115 = remastered(shape, pools, mine, chains)
+  world.Patch = patch(shape, mine, chains)
+
+  local patched = table.clone(Masters)
+  table.insert(patched, V115)
+  table.insert(patched, Patch)
+
+  local enhanced = mod(shape, 'swe', mine, patched)
+  local doubled = reference(1, 'SW_In_TableGround', true)
+  doubled.mastIndex = 5
+  table.insert(enhanced, interior('Tatooine', placed(mine, 3)))
+
+  local doubledCells = {
+    'Taris, Central Plaza',
+    'Taris, Upper City Cantina',
+    'Nar Shaddaa, Lower City',
+    'Nar Shaddaa, Customs',
+    'Starwind test cell',
+  }
+
+  for _, name in doubledCells do
+    local own = reference(1, pick(mine.placed), false)
+    table.insert(enhanced, interior(name, { table.clone(doubled), own }))
+  end
+
+  local office = { reference(1, 'SW_In_TableGround', true), reference(2, pick(mine.placed), false) }
+  table.insert(enhanced, interior('Taris, Central Plaza: Government Office', office))
+  table.insert(
+    enhanced,
+    full {
+      type = 'Armor',
+      id = 'swe_mandochest',
+      name = 'Mandalorian Chest',
+      bipedObjects = {
+        {
+          bipedObjectType = 'Chest',
+          maleBodypart = pick(mine.bodyparts),
+          femaleBodypart = pick(mine.bodyparts),
+        },
+      },
+    }
+  )
+  world.Enhanced = enhanced
+
+  local enhancing = table.clone(Masters)
+  table.insert(enhancing, 'Starwind Enhanced.esm')
+  local bings = mod(shape, 'bng', mine, enhancing)
+
+  for index = 1, 3 do
+    local id = `bng_must_{index}`
+    table.insert(bings, full { type = 'Bodypart', id = id, race = 'bng_mustafarian' })
+  end
+
+  table.insert(bings, exterior(9, 9, '', placed(mine, 3)))
+  table.insert(bings, interior('Nar Shaddaa, H.T. Parnell\'s Oddities', placed(mine, 3)))
+  world.Bings = bings
+
+  world.PlanExp = mod(shape, 'swx', mine, patched)
+  world.AltStart = mod(shape, 'alt', mine, patched)
+  world.CPP = mod(shape, 'cpp', mine, patched)
+
+  local naboo = mod(shape, 'nab', mine, patched)
+  local junk = full { type = 'MiscItem', id = 'Nab_HeaviestJunk', name = 'Junk' }
+  table.insert(naboo, junk)
+
+  for _, id in { 'passtheday', 'nab_byebye', 'dayispassed', 'mothball' } do
+    table.insert(naboo, script(id))
+  end
+
+  table.insert(naboo, full { type = 'Activator', id = 'nab_bed', script = 'passtheday' })
+  table.insert(naboo, full { type = 'Activator', id = 'nab_exit', script = 'Nab_ByeBye' })
+  table.insert(
+    naboo,
+    full {
+      type = 'Container',
+      id = 'ZE_Items',
+      name = 'Items',
+      inventory = { { 1, 'Nab_HeaviestJunk' }, { 2, pick(mine.items) } },
+    }
+  )
+  world.Naboo = naboo
+  world.PartyHats = mod(shape, 'hat', mine, { 'Morrowind.esm' })
+  return world
+end
+
+--- Writes `world` as the JSON sources of a sw_merged folder at `root`, which is made.
+function corpus.write(root: string, world: World)
+  local plugins = jess.fs.join(root, 'plugins')
+
+  for _, folder in { root, plugins } do
+    if not jess.fs.isDir(folder) then jess.fs.createDir(folder) end
+  end
+
+  for _, source in starwind.sources.Included do
+    local records = assert(world[source.key], `the world has no {source.key}`)
+    jess.fs.write(jess.fs.join(plugins, source.json), tes3conv.encode(records), { backup = false })
+  end
+end
+
+--- `records` with the INFOs of every third topic in the reverse of their order, their links as
+--- they were: a plugin whose dialogue has drifted from what the build writes.
+function corpus.drifted(records: Records): Records
+  local drifted = table.clone(records)
+  local topics, first = 0, 0
+
+  local function turn(last: number)
+    if first == 0 or topics % 3 ~= 0 then return end
+
+    for offset = 0, (last - first - 1) // 2 do
+      local low, high = first + offset, last - offset
+      drifted[low], drifted[high] = drifted[high], drifted[low]
+    end
+  end
+
+  for position, record in records do
+    if record.type == 'DialogueInfo' then continue end
+
+    turn(position - 1)
+    first = 0
+
+    if record.type == 'Dialogue' then
+      topics += 1
+      first = position + 1
+    end
+  end
+
+  turn(#records)
+  return drifted
+end
+
+--- The SHA-256 of each file a build wrote under `output`, a folder of the sw_merged folder
+--- `root`, by the file's path under `output`. A report names the files it was made from by
+--- their whole paths, so the sw_merged folder's own path is left out of what is hashed, and a
+--- path under it reads with `/` whatever the platform's separator is.
+function corpus.digests(root: string, output: string): { [string]: string }
+  local escaped = table.concat(string.split(root, '\\'), '\\\\')
+  local digests: { [string]: string } = {}
+
+  local function hash(name: string, path: string)
+    local text = assert(jess.fs.read(path), `'{path}' isn't there`)
+
+    if string.match(name, '%.omwaddon$') then
+      digests[name] = bytes.sha256(text)
+      return
+    end
+
+    local placed = table.concat(string.split(text, escaped), '<root>')
+    placed = string.gsub(
+      placed,
+      '<root>[^"\n]*',
+      function(path: string) return (string.gsub(path, '\\\\', '/')) end
+    )
+    digests[name] = bytes.sha256(placed)
+  end
+
+  for _, name in jess.fs.list(output) do
+    local path = jess.fs.join(output, name)
+
+    if not jess.fs.isDir(path) then
+      hash(name, path)
+      continue
+    end
+
+    for _, file in jess.fs.list(path) do
+      hash(`{name}/{file}`, jess.fs.join(path, file))
+    end
+  end
+
+  return digests
+end
+
+return corpus

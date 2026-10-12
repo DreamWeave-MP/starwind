@@ -1,0 +1,220 @@
+--!strict
+-- The Definitive build, whole: `build` over a sw_merged folder made up for the suite (see
+-- `corpus`), and everything it writes held, by digest, to what it wrote before the code was last
+-- changed: the three plugins, every report, the work files, and the manifest, byte for byte. Then
+-- the ways it stops, and the dialogue audit over a plugin whose INFOs have drifted, which a build
+-- that passes never sees.
+local bytes = require '@dream/bytes'
+local corpus = require './corpus'
+local fs = require '@dream/fs'
+local starwind = require '@starwind'
+local test = require '@jess/test'
+
+local suite, expect = test.new(), test.expect
+
+local Shape: corpus.Shape = {
+  objects = 400,
+  topics = 48,
+  infos = 10,
+  vanillaCells = 3,
+  own = 160,
+  actors = 24,
+  cells = 8,
+  references = 24,
+  ownTopics = 16,
+}
+
+-- What the build of `Shape` writes, each file's SHA-256 (see `corpus.digests`).
+local Written = {
+  ['build-manifest.json'] = '38ed2ecba007a1510770d211534aeaa4d2eb264df3ed15a6578f0eb140fe22fe',
+  ['out/Star_Data.omwaddon'] = '32237b0d4bbc952256f873529e6e39649330c32f7d91538d8029c1e43948d988',
+  ['out/Starwind-Definitive.omwaddon'] = '05bf4a16a0ce630d72e299275aba35e452ca1bcb5f6019a88b42b809fac0a6d2',
+  ['out/Starwind.omwaddon'] = '94eed2feb89716ddb94b549eff6dcb6f42500217774e3e66c3e2d243af9a8bff',
+  ['reports/Starwind-Definitive-closure-audit.json'] = '71b4212b6c0ff0e10d36f9ce1880993425edcc5eb6474e99e32f45c6ca901c4e',
+  ['reports/Starwind-Definitive-dialogue-chain-audit.json'] = 'bf2dc17bad8fff0b7607fc14ea9c94484375e600b33ecd2e52361f8e3e0a9151',
+  ['reports/Starwind-definitive-dialogue-source-hygiene.json'] = '7a7d2535039fff66d1f9583225222e74d63dbdc54ec259be68c8e5dc90052697',
+  ['reports/late-actor-provenance.json'] = '2c5bb3a195fea106e9ae3230ab009f67eda13be91cdd54e0df1d256394a79eef',
+  ['reports/late-actor-provenance.md'] = 'da72bc2dbc9e8588469577d8c96572df632b02698b92e04bdd60a316f2dbebc6',
+  ['reports/main-quest-preservation.json'] = 'f41e27da196ddbc5e42ba54fa3bcaa7ef1f6b5d178820ad3c9d8be9606c96312',
+  ['reports/starwind-split-report.json'] = '3792ebf24dcf69431da5b7ec962242d3e548ab059d27aff63c689f071c48d2d9',
+  ['work/Starwind-Definitive-pre-addVanilla.omwaddon'] = '2baaf5f24575d07502fdbcbd8ffd740ac6e1a2c6e795e67e6dc9077042ac3169',
+  ['work/decoupleLog.txt'] = '0d97187150c90eb3e56679fd7ccd61f6348d1820a1e5a1cd320432e27f13ea93',
+}
+
+-- The main-quest guard's report when the build stops at its first checkpoint, the closure
+-- audit's when it stops there, and the dialogue audit's once the build's INFOs have drifted.
+local Guard = '215fbf7184ae4e9e6fb9de0fc9498b91cb05b9612e58aa004b977993c2c56682'
+local Closure = 'e88c8cf2e0caf106e09d1d7593bef345badfcf7f67af15fd9360214102a38631'
+local Drifted = 'a19de6fcf100ed875fb630f75fa5f1f4ed948002311882d095786c472c1ea09c'
+
+local GuardReport = 'reports/main-quest-preservation.json'
+local ClosureReport = 'reports/Starwind-Definitive-closure-audit.json'
+
+--- An empty folder `name` under the scratch root. The suite runs once from the source and once
+--- from the packed package, so what the run before left there is removed first.
+local function folder(name: string): string
+  local scratch =
+    assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
+  local path = jess.fs.join(scratch, name)
+
+  if jess.fs.exists(path) then assert(fs.remove(path, { recursive = true })) end
+
+  jess.fs.createDir(path)
+  return path
+end
+
+--- A sw_merged folder `name` holding `world`.
+local function merged(name: string, world: corpus.World): string
+  local root = folder(name)
+  corpus.write(root, world)
+  return root
+end
+
+--- `world`'s `key` source without its records of `kind` named `id`.
+local function without(world: corpus.World, key: string, kind: string, id: string)
+  local kept = {}
+
+  for _, record in world[key] do
+    if record.type ~= kind or record.id ~= id then table.insert(kept, record) end
+  end
+
+  world[key] = kept
+end
+
+suite.describe('build', function()
+  suite.it('writes what it wrote before, byte for byte', function()
+    local root = merged('starwind-build', corpus.world(Shape))
+    local output = jess.fs.join(root, '.swbuild', 'definitive')
+    local timings: { [string]: number } = {}
+    local manifest =
+      starwind.build { root = root, strict = true, keepWork = true, timings = timings }
+
+    expect(corpus.digests(root, output)).toEqual(Written)
+    expect(manifest.edition).toBe 'definitive'
+    expect(manifest.output).toBe(jess.fs.join(output, 'out', 'Starwind-Definitive.omwaddon'))
+
+    local stages = {}
+
+    for stage in timings do
+      table.insert(stages, stage)
+    end
+
+    table.sort(stages)
+    expect(stages).toEqual {
+      'closure',
+      'compile',
+      'decouple',
+      'dialogue audit',
+      'hygiene',
+      'late actors',
+      'manifest',
+      'merge',
+      'preprocess',
+      'read back',
+      'split',
+      'write',
+    }
+  end)
+
+  suite.it('writes the same without --strict and --keep-work, but for the work folder', function()
+    local root = merged('starwind-build-plain', corpus.world(Shape))
+    local output = jess.fs.join(root, 'elsewhere')
+    starwind.build { root = root, output = output }
+
+    -- The manifest and the reports name the output folder, which is another here.
+    local written = corpus.digests(root, output)
+    local plugins =
+      { 'out/Star_Data.omwaddon', 'out/Starwind.omwaddon', 'out/Starwind-Definitive.omwaddon' }
+
+    for _, name in plugins do
+      expect(written[name]).toBe(Written[name])
+    end
+
+    expect(jess.fs.isDir(jess.fs.join(output, 'work'))).toBe(false)
+    expect(jess.fs.isDir(jess.fs.join(root, '.swbuild'))).toBe(false)
+  end)
+
+  suite.it('stops at the first checkpoint an anchor is missing from, naming it', function()
+    local world = corpus.world(Shape)
+    without(world, 'V115', 'Npc', 'SW_ShipQuester')
+    local root = merged('starwind-build-anchor', world)
+    local output = jess.fs.join(root, '.swbuild', 'definitive')
+
+    expect(function() starwind.build { root = root } end).toThrow(
+      'main-quest preservation failed at before-definitive-preprocess: records=[Npc:SW_ShipQuester], cell_references=[]'
+    )
+    expect(corpus.digests(root, output)[GuardReport]).toBe(Guard)
+  end)
+
+  suite.it('stops at a reference nothing resolves, with the closure report written', function()
+    local world = corpus.world(Shape)
+    local crate = corpus.full {
+      type = 'Container',
+      id = 'sw_crate_of_nothing',
+      inventory = { { 1, 'sw_nothing' }, { 2, 'SW_SignCantina' }, { 1, 'SW_Nothing' } },
+    }
+    local door = corpus.full { type = 'Door', id = 'swp_door_to_nowhere', script = 'swp_nowhere' }
+    table.insert(world.V115, crate)
+    table.insert(world.Patch, door)
+    local root = merged('starwind-build-closure', world)
+    local output = jess.fs.join(root, '.swbuild', 'definitive')
+    local report = jess.fs.join(output, 'reports', 'Starwind-Definitive-closure-audit.json')
+
+    expect(function() starwind.build { root = root } end).toThrow(
+      `unresolved hard dependencies: 3 (see {report})`
+    )
+    expect(corpus.digests(root, output)[ClosureReport]).toBe(Closure)
+  end)
+
+  suite.it('says which source is missing', function()
+    local root = merged('starwind-build-missing', corpus.world(Shape))
+    assert(fs.remove(jess.fs.join(root, 'plugins', 'naboo.json')))
+
+    expect(function() starwind.build { root = root } end).toThrow(
+      'missing definitive source JSON: naboo.json'
+    )
+  end)
+end)
+
+suite.describe('dialogue audit', function()
+  suite.it('reports a plugin whose INFOs have drifted as it did before', function()
+    local root = merged('starwind-drift', corpus.world(Shape))
+    local pipeline = starwind.pipeline
+    local staged, compiled = pipeline.compile(jess.fs.join(root, 'plugins'))
+    pipeline.preprocess(staged)
+    pipeline.merge(staged)
+    local decoupled = pipeline.decouple(staged)
+    local path = jess.fs.join(root, 'drift.json')
+
+    local function sources()
+      return {
+        { name = 'V1.15', records = compiled.raw['StarwindRemasteredV1.15.esm'] },
+        { name = 'Patch', records = compiled.raw['StarwindRemasteredPatch.esm'] },
+      }
+    end
+
+    local report = starwind.dialogue.audit {
+      final = { name = 'final', records = corpus.drifted(decoupled.final) },
+      starwind = { name = 'Starwind', records = decoupled.preAddVanilla },
+      bases = {
+        { name = 'Morrowind.esm', records = staged['Morrowind.esm'] },
+        { name = 'Tribunal.esm', records = staged['Tribunal.esm'] },
+        { name = 'Bloodmoon.esm', records = staged['Bloodmoon.esm'] },
+      },
+      log = decoupled.log,
+      logPath = 'decoupleLog.txt',
+      provenance = sources,
+      provenanceNames = { 'V1.15', 'Patch' },
+      reportPath = path,
+    }
+
+    local summary = report.summary :: { [string]: number }
+    expect(summary.engine_order_mismatches > 0).toBe(true)
+    expect(summary.potentially_competing_inversions > 0).toBe(true)
+    expect(summary.proven_disjoint_inversions > 0).toBe(true)
+    expect(summary.potential_patch_candidate_infos > 0).toBe(true)
+    expect(bytes.sha256(assert(jess.fs.read(path)))).toBe(Drifted)
+  end)
+end)
+
+return suite
