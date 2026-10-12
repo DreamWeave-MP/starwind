@@ -56,10 +56,11 @@ function hygiene.newState(): State return { active = {}, tombstones = {} } end
 
 function hygiene.apply(state: State, records: Records, label: string)
   for _, item in hygiene.physicalInfos(records) do
-    local key = `{item.topic}\0{item.id}`
-    local entry = { record = item.record, source = label, recordIndex = item.recordIndex }
+    local {topic, id, record, recordIndex} = item
+    local key = `{topic}\0{id}`
+    local entry = { record = record, source = label, recordIndex = recordIndex }
 
-    if tes3.isDeleted(item.record) then
+    if tes3.isDeleted(record) then
       state.active[key] = nil
       state.tombstones[key] = entry
     else
@@ -218,13 +219,14 @@ function hygiene.classify(source: Source, parent: State, parentModel: string?): 
   local changedByTopic: { [string]: { [string]: boolean } } = {}
 
   for _, item in items do
-    local key = `{item.topic}\0{item.id}`
+    local {topic, id, record, recordIndex} = item
+    local key = `{topic}\0{id}`
     local active, tombstone = parent.active[key], parent.tombstones[key]
-    local kind = category(item.record, active, tombstone)
+    local kind = category(record, active, tombstone)
 
     if kind == 'NEW_INFO' or kind == 'MODIFIED_PARENT' then
-      changedByTopic[item.topic] = changedByTopic[item.topic] or {}
-      changedByTopic[item.topic][item.id] = true
+      changedByTopic[topic] = changedByTopic[topic] or {}
+      changedByTopic[topic][id] = true
     end
 
     local entry = active or tombstone
@@ -232,11 +234,11 @@ function hygiene.classify(source: Source, parent: State, parentModel: string?): 
       rows,
       report.object {
         'topic',
-        item.topic,
+        topic,
         'info_id',
-        item.id,
+        id,
         'record_index',
-        item.recordIndex,
+        recordIndex,
         'category',
         kind,
         'parent_source',
@@ -244,11 +246,11 @@ function hygiene.classify(source: Source, parent: State, parentModel: string?): 
         'parent_record_index',
         if entry then entry.recordIndex else nil,
         'starwind',
-        hygiene.compact(item.record),
+        hygiene.compact(record),
         'parent',
         hygiene.compact(if entry then entry.record else nil),
         'changed_links',
-        changedLinks(item.record, if active then active.record else nil),
+        changedLinks(record, if active then active.record else nil),
         'duplicate_in_source',
         duplicates[key],
       }
@@ -304,24 +306,19 @@ function hygiene.classify(source: Source, parent: State, parentModel: string?): 
     return left.topic < right.topic
   end)
 
-  local topCleanup = report.array()
-
-  for index = 1, math.min(100, #cleanup) do
-    local entry = cleanup[index]
-    table.insert(
-      topCleanup,
-      report.object {
-        'topic',
-        entry.topic,
-        'cleanup_candidates',
-        entry.total,
-        'redundant_exact',
-        entry.exact,
-        'link_dirt',
-        entry.dirt,
-      }
-    )
-  end
+  local topCleanup = report.array([
+    for {topic, total, exact, dirt} in cleanup[1:100]
+    => report.object {
+      'topic',
+      topic,
+      'cleanup_candidates',
+      total,
+      'redundant_exact',
+      exact,
+      'link_dirt',
+      dirt,
+    }
+  ])
 
   local duplicateKeys = {}
 
@@ -364,11 +361,7 @@ function hygiene.classify(source: Source, parent: State, parentModel: string?): 
     table.insert(topicPairs, ordered(topics[topic].counts, topics[topic].order))
   end
 
-  local rowList = report.array()
-
-  for _, row in rows do
-    table.insert(rowList, row)
-  end
+  local rowList = report.array([for row in rows => row])
 
   return report.object {
     'source_json',
@@ -406,16 +399,13 @@ function hygiene.audit(
   layered: { Source },
   path: string
 ): { [string]: Json }
-  local reports = report.array()
   -- Classifying reads the state and never changes it, so one baseline serves every source.
   local baseline = hygiene.vanillaState(vanilla)
 
-  for _, source in corpus do
-    table.insert(
-      reports,
-      hygiene.classify(source, baseline, 'Morrowind -> Tribunal -> Bloodmoon (vanilla baseline)')
-    )
-  end
+  local reports = report.array([
+    for source in corpus
+    => hygiene.classify(source, baseline, 'Morrowind -> Tribunal -> Bloodmoon (vanilla baseline)')
+  ])
 
   local state = hygiene.vanillaState(vanilla)
   local layeredReports = report.array()
@@ -425,11 +415,7 @@ function hygiene.audit(
     hygiene.apply(state, source.records, source.label)
   end
 
-  local paths = report.array()
-
-  for _, source in vanilla do
-    table.insert(paths, source.path)
-  end
+  local paths = report.array([for {path} in vanilla => path])
 
   local result = report.object {
     'version',
