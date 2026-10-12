@@ -113,7 +113,43 @@ local function number(value: number): string
   return tostring(value)
 end
 
-local function encode(value: Json?, indent: string, parts: { string })
+-- What a level of indentation is written with: what its items start with, and what closes it.
+type Margin = { inner: string, bracket: string, brace: string }
+
+-- The margins of every depth written so far, by the indentation: a report is a few levels deep.
+local margins: { [string]: Margin } = {}
+
+local function marginOf(indent: string): Margin
+  local known = margins[indent]
+
+  if known then return known end
+
+  local made = { inner = indent .. '  ', bracket = indent .. ']', brace = indent .. '}' }
+  margins[indent] = made
+  return made
+end
+
+-- What one `encode` is writing: the pieces of its text, each string it has spelled so far in its
+-- quotes, and each key it has opened a line with at each depth. A report says the same field
+-- names, types, and ids thousands of times over, and each is spelled once.
+type Writing = {
+  parts: { string },
+  quoted: { [string]: string },
+  opened: { [string]: { [string]: string } },
+}
+
+local function quoted(writing: Writing, text: string): string
+  local known = writing.quoted[text]
+
+  if known then return known end
+
+  local made = '"' .. escape(text) .. '"'
+  writing.quoted[text] = made
+  return made
+end
+
+local function encode(value: Json?, indent: string, writing: Writing)
+  local parts = writing.parts
   local kind = type(value)
 
   if value == nil or value == jess.null then
@@ -123,10 +159,11 @@ local function encode(value: Json?, indent: string, parts: { string })
   elseif kind == 'number' then
     table.insert(parts, number(value :: number))
   elseif kind == 'string' then
-    table.insert(parts, '"' .. escape(value :: string) .. '"')
+    table.insert(parts, quoted(writing, value :: string))
   else
     local container = value :: { [string | number]: Json }
-    local inner = indent .. '  '
+    local margin = marginOf(indent)
+    local inner = margin.inner
     local keys = order[container]
 
     if
@@ -143,11 +180,11 @@ local function encode(value: Json?, indent: string, parts: { string })
 
       for index, item in container :: { Json } do
         table.insert(parts, inner)
-        encode(item, inner, parts)
+        encode(item, inner, writing)
         table.insert(parts, if index < #container then ',\n' else '\n')
       end
 
-      table.insert(parts, indent .. ']')
+      table.insert(parts, margin.bracket)
       return
     end
 
@@ -169,20 +206,34 @@ local function encode(value: Json?, indent: string, parts: { string })
 
     table.insert(parts, '{\n')
 
+    local opened = writing.opened[inner]
+
+    if not opened then
+      opened = {}
+      writing.opened[inner] = opened
+    end
+
     for index, key in keys :: { string } do
-      table.insert(parts, inner .. '"' .. escape(key) .. '": ')
-      encode(container[key], inner, parts)
+      local opening = opened[key]
+
+      if not opening then
+        opening = inner .. quoted(writing, key) .. ': '
+        opened[key] = opening
+      end
+
+      table.insert(parts, opening)
+      encode(container[key], inner, writing)
       table.insert(parts, if index < #(keys :: { string }) then ',\n' else '\n')
     end
 
-    table.insert(parts, indent .. '}')
+    table.insert(parts, margin.brace)
   end
 end
 
 function report.encode(value: Json): string
-  local parts = {}
-  encode(value, '', parts)
-  return table.concat(parts)
+  local writing: Writing = { parts = {}, quoted = {}, opened = {} }
+  encode(value, '', writing)
+  return table.concat(writing.parts)
 end
 
 -- Writes `value` to `path` as Python's report writers do: indented, with a final newline.
