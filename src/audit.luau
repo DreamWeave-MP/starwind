@@ -19,12 +19,7 @@ local audit = {}
 export type Staged = { name: string, records: Records }
 
 local function anchors(): { string }
-  local list = {}
-
-  for _, anchor in sources.MainQuestAnchors do
-    table.insert(list, `{anchor[1]}:{anchor[2]}`)
-  end
-
+  local list = [for anchor in sources.MainQuestAnchors => `{anchor[1]}:{anchor[2]}`]
   table.sort(list)
   return list
 end
@@ -112,17 +107,17 @@ local function missing(
   found: { [string]: boolean },
   references: { [string]: boolean }
 ): ({ string }, { string })
-  local records, cells = {}, {}
+  local records = [
+    for anchor in sources.MainQuestAnchors
+    if not found[`{anchor[1]}\0{string.lower(anchor[2])}`]
+    => `{anchor[1]}:{anchor[2]}`
+  ]
 
-  for _, anchor in sources.MainQuestAnchors do
-    if not found[`{anchor[1]}\0{string.lower(anchor[2])}`] then
-      table.insert(records, `{anchor[1]}:{anchor[2]}`)
-    end
-  end
-
-  for _, anchor in sources.MainQuestCellReferenceAnchors do
-    if not references[string.lower(anchor)] then table.insert(cells, anchor) end
-  end
+  local cells = [
+    for anchor in sources.MainQuestCellReferenceAnchors
+    if not references[string.lower(anchor)]
+    => anchor
+  ]
 
   table.sort(records)
   table.sort(cells)
@@ -150,12 +145,7 @@ function audit.mainQuest(stage: string, staged: { Staged }, checks: { Json }, pa
     records, cells = missing(found, references)
   end
 
-  local names = {}
-
-  for _, plugin in staged do
-    table.insert(names, plugin.name)
-  end
-
+  local names = [for {name} in staged => name]
   table.insert(
     checks,
     report.object {
@@ -229,15 +219,12 @@ function audit.closure(records: Records, path: string, knownSources: () -> { Rec
     if id ~= '' then ids[string.lower(id)] = true end
   end
 
-  local hard: { dependencies.Dependency } = {}
-
-  for index, record in records do
-    for _, dependency in dependencies.of(record, index - 1) do
-      if dependencies.HardKinds[dependency.kind] and not ids[dependency.target] then
-        table.insert(hard, dependency)
-      end
-    end
-  end
+  local hard: { dependencies.Dependency } = [
+    for index, record in enumerate(records)
+    for dependency in dependencies.of(record, index - 1)
+    if dependencies.HardKinds[dependency.kind] and not ids[dependency.target]
+    => dependency
+  ]
 
   local known: { [string]: boolean } = {}
 
@@ -319,11 +306,9 @@ function audit.closure(records: Records, path: string, knownSources: () -> { Rec
     table.insert(kindPairs, byKind[kind])
   end
 
-  local unresolved = report.array()
-
-  for index, dependency in hard do
-    table.insert(unresolved, dependencyJson(dependency, provenance[index]))
-  end
+  local unresolved = report.array(
+    [for index, dependency in enumerate(hard) => dependencyJson(dependency, provenance[index])]
+  )
 
   local missingIds = {}
 
