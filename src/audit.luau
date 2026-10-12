@@ -35,11 +35,40 @@ local function referenceAnchors(): { string }
   return list
 end
 
+-- What a checkpoint looks for: the anchors' ids, lowercased, under their types, the reference
+-- anchors', and whether each id it has met in a cell is one of those. A plugin places the same
+-- few thousand things over and over, and none of them is an anchor.
+type Wanted = {
+  ids: { [string]: { [string]: boolean } },
+  references: { [string]: boolean },
+  placed: { [string]: boolean },
+}
+
+local function wanted(): Wanted
+  local ids: { [string]: { [string]: boolean } } = {}
+  local references: { [string]: boolean } = {}
+
+  for _, anchor in sources.MainQuestAnchors do
+    local kind = anchor[1]
+    ids[kind] = ids[kind] or {}
+    ids[kind][string.lower(anchor[2])] = true
+  end
+
+  for _, anchor in sources.MainQuestCellReferenceAnchors do
+    references[string.lower(anchor)] = true
+  end
+
+  return { ids = ids, references = references, placed = {} }
+end
+
+-- Marks in `found` and `references` the anchors `records` hold: only an anchor is ever asked
+-- for, so nothing else is kept.
 local function scan(
   records: Records,
   found: { [string]: boolean },
   references: { [string]: boolean },
-  realize: boolean
+  realize: boolean,
+  sought: Wanted
 )
   for index = 2, #records do
     local record = records[index]
@@ -50,18 +79,31 @@ local function scan(
       tes3conv.realize(record)
     end
 
-    local id = tes3.auditId(record)
+    local kind = record.type
+    local ids = sought.ids[kind :: string]
 
-    if id ~= '' then found[`{tes3.string(record.type)}\0{string.lower(id)}`] = true end
+    if ids then
+      local id = string.lower(tes3.auditId(record))
 
-    if record.type == 'Cell' then
-      for _, value in (record.references or {}) :: { tes3.Value } do
-        local reference = value :: Table
+      if id ~= '' and ids[id] then found[`{kind}\0{id}`] = true end
+    end
 
-        if tes3.string(reference.id) ~= '' and not reference.deleted then
-          references[tes3.lower(reference.id)] = true
-        end
+    if kind ~= 'Cell' then continue end
+
+    for _, value in (record.references or {}) :: { tes3.Value } do
+      local reference = value :: Table
+      local id = reference.id
+
+      if type(id) ~= 'string' or id == '' or reference.deleted then continue end
+
+      local placed = sought.placed[id]
+
+      if placed == nil then
+        placed = sought.references[string.lower(id)] == true
+        sought.placed[id] = placed
       end
+
+      if placed then references[string.lower(id)] = true end
     end
   end
 end
@@ -92,16 +134,17 @@ end
 -- rest leave an anchor missing: Morrowind's cells can't hold Starwind's quest giver.
 function audit.mainQuest(stage: string, staged: { Staged }, checks: { Json }, path: string)
   local found, references = {}, {}
+  local sought = wanted()
 
   for _, plugin in staged do
-    scan(plugin.records, found, references, false)
+    scan(plugin.records, found, references, false, sought)
   end
 
   local records, cells = missing(found, references)
 
   if #records > 0 or #cells > 0 then
     for _, plugin in staged do
-      scan(plugin.records, found, references, true)
+      scan(plugin.records, found, references, true, sought)
     end
 
     records, cells = missing(found, references)
