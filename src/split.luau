@@ -341,11 +341,30 @@ local function uniqueRecords(
   return byKey, order, names
 end
 
-local function unresolved(records: Records, known: Namespace): { Dependency }
+-- The dependencies a validation has read, by the record.
+type Read = { [Record]: { Dependency } }
+
+-- A record's dependencies, read once a validation: the halves' records are the monolith's own,
+-- and each is asked what it depends on in three walks. A record that has no id or name is
+-- reported under its place in a walk, as `#place`, and is read again in the next.
+local function dependenciesOf(read: Read, record: Record, ordinal: number): { Dependency }
+  local known = read[record]
+
+  if known then return known end
+
+  local list = dependencies.of(record, ordinal)
+  local first = list[1]
+
+  if not first or string.byte(first.source_id) ~= 35 then read[record] = list end
+
+  return list
+end
+
+local function unresolved(records: Records, known: Namespace, read: Read): { Dependency }
   local result = {}
 
   for index, record in records do
-    for _, dependency in dependencies.of(record, index) do
+    for _, dependency in dependenciesOf(read, record, index) do
       if dependencies.HardKinds[dependency.kind] and not resolves(dependency, known) then
         table.insert(result, dependency)
       end
@@ -544,9 +563,10 @@ local function validate(source: Written, data: core.Plugin, content: core.Plugin
   end
 
   local dataToContent, contentToData = report.array(), report.array()
+  local read: Read = {}
 
   for index, record in dataRecords do
-    for _, dependency in dependencies.of(record, index) do
+    for _, dependency in dependenciesOf(read, record, index) do
       if resolves(dependency, contentNames) and not resolves(dependency, dataNames) then
         table.insert(dataToContent, dependencyJson(dependency))
       end
@@ -554,15 +574,15 @@ local function validate(source: Written, data: core.Plugin, content: core.Plugin
   end
 
   for index, record in contentRecords do
-    for _, dependency in dependencies.of(record, index) do
+    for _, dependency in dependenciesOf(read, record, index) do
       if resolves(dependency, dataNames) and not resolves(dependency, contentNames) then
         table.insert(contentToData, dependencyJson(dependency))
       end
     end
   end
 
-  local sourceUnresolved = unresolved(sourceRecords, sourceNames)
-  local pairUnresolved = unresolved(pairRecords, pairNames)
+  local sourceUnresolved = unresolved(sourceRecords, sourceNames, read)
+  local pairUnresolved = unresolved(pairRecords, pairNames, read)
   local sourceIdentities: { [string]: boolean } = {}
 
   for _, dependency in sourceUnresolved do
