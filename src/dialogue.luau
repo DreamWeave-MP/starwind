@@ -818,11 +818,19 @@ local function speakerSex(record: Record): string
   return if sex == 'male' or sex == 'female' then sex else ''
 end
 
-local function actorFits(actor: Actor, record: Record): boolean
-  local speaker, race, class =
-    norm(record.speakerId), norm(record.speakerRace), norm(record.speakerClass)
-  local sex = speakerSex(record)
+-- What an INFO asks of whoever says it, read once: `actorFits` is asked of every actor.
+type Asked = { speaker: string, race: string, class: string, sex: string }
 
+local function asked(record: Record): Asked
+  return {
+    speaker = norm(record.speakerId),
+    race = norm(record.speakerRace),
+    class = norm(record.speakerClass),
+    sex = speakerSex(record),
+  }
+end
+
+local function actorFits(actor: Actor, {speaker, race, class, sex}: Asked): boolean
   if speaker ~= '' and actor.id ~= speaker then
     return false
   elseif race ~= '' and actor.race ~= race then
@@ -836,11 +844,20 @@ local function actorFits(actor: Actor, record: Record): boolean
   return true
 end
 
-local function sharedActors(first: Record, second: Record, actors: { Actor }): (number, { Json })
+-- The actors both INFOs could be said by, counted, and the first twelve of them. An INFO that
+-- names its speaker is asked only of the actors of that id, who come in the order all do.
+local function sharedActors(
+  first: Record,
+  second: Record,
+  actors: { Actor },
+  byId: { [string]: { Actor } }
+): (number, { Json })
   local count, sample = 0, report.array()
+  local firstAsked, secondAsked = asked(first), asked(second)
+  local named = if firstAsked.speaker ~= '' then firstAsked.speaker else secondAsked.speaker
 
-  for _, actor in actors do
-    if actorFits(actor, first) and actorFits(actor, second) then
+  for _, actor in if named ~= '' then byId[named] or {} else actors do
+    if actorFits(actor, firstAsked) and actorFits(actor, secondAsked) then
       count += 1
 
       if #sample < 12 then table.insert(sample, actor.id) end
@@ -850,22 +867,25 @@ local function sharedActors(first: Record, second: Record, actors: { Actor }): (
   return count, sample
 end
 
--- `mutually_exclusive_info`: whether two INFOs provably can't answer the same event.
+local ComparedFields = {
+  { 'speakerId', 'speaker_id' },
+  { 'speakerRace', 'speaker_race' },
+  { 'speakerClass', 'speaker_class' },
+  { 'speakerCell', 'speaker_cell' },
+}
+
+-- `mutually_exclusive_info`: whether two INFOs provably can't answer the same event, and why.
+-- When nothing else proves it, the actors both could be said by are counted, and that count and
+-- its first twelve come back too.
 local function mutuallyExclusive(
   first: Record,
   second: Record,
-  actors: { Actor }
-): (boolean, { Json })
+  actors: { Actor },
+  byId: { [string]: { Actor } }
+): (boolean, { Json }, number?, { Json }?)
   local reasons = report.array()
 
-  local comparedFields = {
-    { 'speakerId', 'speaker_id' },
-    { 'speakerRace', 'speaker_race' },
-    { 'speakerClass', 'speaker_class' },
-    { 'speakerCell', 'speaker_cell' },
-  }
-
-  for _, pair in comparedFields do
+  for _, pair in ComparedFields do
     local firstValue, secondValue = norm(first[pair[1]]), norm(second[pair[1]])
 
     if firstValue ~= '' and secondValue ~= '' and firstValue ~= secondValue then
@@ -938,14 +958,14 @@ local function mutuallyExclusive(
     end
   end
 
-  local count = sharedActors(first, second, actors)
+  local count, sample = sharedActors(first, second, actors, byId)
 
   if count == 0 then
     table.insert(reasons, 'no_shared_actor_candidate')
     return true, reasons
   end
 
-  return false, reasons
+  return false, reasons, count, sample
 end
 
 local function constraints(record: Record): Json
@@ -1075,7 +1095,8 @@ local function orderSemantics(
   expected: { string },
   actual: { string },
   expectedInfos: { [string]: Entry },
-  actors: { Actor }
+  actors: { Actor },
+  byId: { [string]: { Actor } }
 ): { [string]: Json }
   local pairs = inversions(expected, actual)
   local proven, unproven = report.array(), report.array()
@@ -1091,7 +1112,8 @@ local function orderSemantics(
       continue
     end
 
-    local exclusive, reasons = mutuallyExclusive(firstInfo.record, secondInfo.record, actors)
+    local exclusive, reasons, count, sample =
+      mutuallyExclusive(firstInfo.record, secondInfo.record, actors, byId)
     local item = report.object {
       'first',
       pair[1],
@@ -1108,7 +1130,6 @@ local function orderSemantics(
     if exclusive then
       table.insert(proven, item)
     else
-      local count, sample = sharedActors(firstInfo.record, secondInfo.record, actors)
       report.set(item :: { [string]: Json }, 'shared_actor_candidate_count', count)
       report.set(item :: { [string]: Json }, 'shared_actor_candidate_ids', sample)
       report.set(item :: { [string]: Json }, 'first_constraints', constraints(firstInfo.record))
@@ -1539,6 +1560,8 @@ function dialogue.audit(
     report.array(), report.array(), report.array(), {}
   local physicalOrder, links, dialogueContent, infoContent =
     report.array(), report.array(), report.array(), report.array()
+  -- The actors by id, made when the first order is found wrong: most audits find none.
+  local actorsById: { [string]: { Actor } }? = nil
 
   for _, topic in sorted(projected) do
     local got = standalone.dialogues[topic]
@@ -1583,9 +1606,11 @@ function dialogue.audit(
           firstDifference(expected.order, gotOrder, 'standalone'),
         }
       )
+      local byId = actorsById or actorIndex(actors).byId
+      actorsById = byId
       table.insert(
         semantics,
-        orderSemantics(topic, expected.order, gotOrder, expected.infos, actors)
+        orderSemantics(topic, expected.order, gotOrder, expected.infos, actors, byId)
       )
     end
 
