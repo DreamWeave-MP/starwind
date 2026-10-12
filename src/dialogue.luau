@@ -412,12 +412,13 @@ local function actorIndex(actors: { Actor }): ActorIndex
   local index: ActorIndex = { byId = {}, races = {}, classes = {}, pairs = {} }
 
   for _, actor in actors do
-    local same = index.byId[actor.id] or {}
-    index.byId[actor.id] = same
+    local {id, race, class} = actor
+    local same = index.byId[id] or {}
+    index.byId[id] = same
     table.insert(same, actor)
-    index.races[actor.race] = true
-    index.classes[actor.class] = true
-    index.pairs[`{actor.race}\0{actor.class}`] = true
+    index.races[race] = true
+    index.classes[class] = true
+    index.pairs[`{race}\0{class}`] = true
   end
 
   return index
@@ -1095,30 +1096,15 @@ local function orderBlocks(expected: { string }, actual: { string }): { Json }
     position[id] = index - 1
   end
 
-  local common = {}
-
-  for _, id in actual do
-    if position[id] ~= nil then table.insert(common, id) end
-  end
-
+  local common = [for id in actual if position[id] ~= nil => id]
   local blocks = report.array()
 
   if #common == 0 then return blocks end
 
   local function emit(first: number, last: number)
-    local ids = {}
-
-    for index = first, last do
-      table.insert(ids, common[index])
-    end
+    local ids = common[first:last]
 
     if #ids == 0 then return end
-
-    local shown = {}
-
-    for index = 1, math.min(40, #ids) do
-      shown[index] = ids[index]
-    end
 
     table.insert(
       blocks,
@@ -1138,7 +1124,7 @@ local function orderBlocks(expected: { string }, actual: { string }): { Json }
         'last_id',
         ids[#ids],
         'ids',
-        report.array(shown),
+        report.array(ids[1:40]),
         'truncated',
         #ids > 40,
       }
@@ -1170,23 +1156,14 @@ local function inversions(expected: { string }, actual: { string }): { { string 
     position[id] = index
   end
 
-  local common = {}
+  local common = [for id in expected if position[id] => id]
 
-  for _, id in expected do
-    if position[id] then table.insert(common, id) end
-  end
-
-  local out = {}
-
-  for index, left in common do
-    for following = index + 1, #common do
-      if position[left] > position[common[following]] then
-        table.insert(out, { left, common[following] })
-      end
-    end
-  end
-
-  return out
+  return [
+    for index, left in enumerate(common)
+    for following in range(index + 1, #common)
+    if position[left] > position[common[following]]
+    => { left, common[following] }
+  ]
 end
 
 -- `analyze_order_semantics`.
@@ -1239,15 +1216,7 @@ local function orderSemantics(
 
   local blocks = orderBlocks(expected, actual)
 
-  local function first(list: { Json }): { Json }
-    local out = report.array()
-
-    for index = 1, math.min(50, #list) do
-      out[index] = list[index]
-    end
-
-    return out
-  end
+  local function first(list: { Json }): { Json } return report.array(list[1:50]) end
 
   return report.object {
     'dialogue_id',
@@ -1622,11 +1591,8 @@ function dialogue.audit(
   table.insert(stack, options.starwind)
   local effective = dialogue.replay(stack)
   local starwindIds = dialogue.physicalIds(options.starwind.records)
-  local scripts = {}
-
-  for _, record in options.starwind.records do
-    if record.type == 'Script' then table.insert(scripts, tes3.string(record.text)) end
-  end
+  local scripts =
+    [for record in options.starwind.records if record.type == 'Script' => tes3.string(record.text)]
 
   local finalActors = dialogue.actorPopulation(options.final.records)
   local livenessActors = dialogue.livenessActors(options.log)
@@ -1801,11 +1767,6 @@ function dialogue.audit(
     local order = finalizedOrder(got)
     extraInfoCount += #order
     local rust = materialized[topic]
-    local shown = {}
-
-    for index = 1, math.min(100, #order) do
-      shown[index] = order[index]
-    end
 
     table.insert(
       extraDetails,
@@ -1817,7 +1778,7 @@ function dialogue.audit(
         'effective_info_count',
         #order,
         'effective_info_ids',
-        report.array(shown),
+        report.array(order[1:100]),
         'rust_materialization',
         rust,
         'rust_live_info_count_matches',
@@ -1833,31 +1794,20 @@ function dialogue.audit(
   end
 
   table.sort(notExpected)
-  local withRust, withoutRust = 0, 0
+  local withRust = #[for topic in extraTopics if materialized[topic] => topic]
+  local withoutRust = #extraTopics - withRust
+  local total = sum[for result in semantics => result.inversions :: number]
+  local proven = sum[for result in semantics => result.proven_mutually_exclusive :: number]
+  local risky = sum[for result in semantics => result.potentially_competing :: number]
 
-  for _, topic in extraTopics do
-    if materialized[topic] then
-      withRust += 1
-    else
-      withoutRust += 1
-    end
-  end
+  local safe = #[
+    for result in semantics
+    if (result.inversions :: number) > 0 and result.potentially_competing == 0
+    => result
+  ]
 
-  local total, proven, risky, safe, riskyTopics = 0, 0, 0, 0, 0
-
-  for _, result in semantics do
-    total += result.inversions :: number
-    proven += result.proven_mutually_exclusive :: number
-    risky += result.potentially_competing :: number
-
-    if (result.inversions :: number) > 0 and result.potentially_competing == 0 then
-      safe += 1
-    end
-
-    if (result.potentially_competing :: number) > 0 then
-      riskyTopics += 1
-    end
-  end
+  local riskyTopics =
+    #[for result in semantics if (result.potentially_competing :: number) > 0 => result]
 
   local materializedCount = 0
 
@@ -1912,11 +1862,7 @@ function dialogue.audit(
     #standalone.orphans,
   }
 
-  local notExpectedList = report.array()
-
-  for _, topic in notExpected do
-    table.insert(notExpectedList, materialized[topic])
-  end
+  local notExpectedList = report.array([for topic in notExpected => materialized[topic]])
 
   local semanticsList = report.array(semantics :: { Json })
   local pairs, candidates = triage(
@@ -1925,11 +1871,7 @@ function dialogue.audit(
     function() return dialogue.provenanceIndex(options.provenance()) end
   )
 
-  local stackNames = {}
-
-  for _, source in stack do
-    table.insert(stackNames, source.name)
-  end
+  local stackNames = [for {name} in stack => name]
 
   local result = report.object {
     'summary',
