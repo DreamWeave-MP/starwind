@@ -614,16 +614,6 @@ local function sameNumber(left: number, right: number): boolean
   return string.pack('<f', left) == string.pack('<f', right)
 end
 
-local function snakeKey(key: Value): string
-  return (
-    string.gsub(
-      tostring(key),
-      '(%u)',
-      function(letter: string) return '_' .. string.lower(letter) end
-    )
-  )
-end
-
 -- `diff_paths`: the dotted paths at which two values differ, keys spelled as tes3conv spells them.
 local function diffPaths(expected: Value?, actual: Value?, prefix: string, out: { string })
   if type(expected) == 'number' and type(actual) == 'number' then
@@ -676,10 +666,14 @@ local function diffPaths(expected: Value?, actual: Value?, prefix: string, out: 
     table.insert(keys, key)
   end
 
-  table.sort(keys, function(first, second) return snakeKey(first) < snakeKey(second) end)
+  table.sort(
+    keys,
+    function(first, second) return report.snakeKey(first) < report.snakeKey(second) end
+  )
 
   for _, key in keys do
-    local path = if prefix == '' then snakeKey(key) else `{prefix}.{snakeKey(key)}`
+    local name = report.snakeKey(key)
+    local path = if prefix == '' then name else `{prefix}.{name}`
 
     if left[key] == nil or right[key] == nil then
       table.insert(out, path)

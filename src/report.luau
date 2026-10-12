@@ -198,6 +198,25 @@ function report.write(path: string, value: Json, finalNewline: boolean?)
   )
 end
 
+-- Each field name `snakeKey` has spelled, by the name: a record's fields are named once for
+-- every record, and there are few names.
+local snakeKeys: { [string]: string } = {}
+
+-- A record's field name as tes3conv spells it: `speakerId` is `speaker_id`.
+function report.snakeKey(key: string): string
+  local known = snakeKeys[key]
+
+  if known then return known end
+
+  local spelled = string.gsub(
+    key,
+    '(%u)',
+    function(letter: string) return '_' .. string.lower(letter) end
+  )
+  snakeKeys[key] = spelled
+  return spelled
+end
+
 -- A record as a report shows it: tes3conv's snake_case field names.
 function report.snake(value: Json): Json
   if type(value) ~= 'table' then return value end
@@ -218,12 +237,7 @@ function report.snake(value: Json): Json
   local result: { [string]: Json } = {}
 
   for key, item in container do
-    local name = string.gsub(
-      tostring(key),
-      '(%u)',
-      function(letter: string) return '_' .. string.lower(letter) end
-    )
-    result[name] = report.snake(item)
+    result[report.snakeKey(tostring(key))] = report.snake(item)
   end
 
   return report.dict(result)

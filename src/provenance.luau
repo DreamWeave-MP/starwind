@@ -162,11 +162,7 @@ local function values(value: Value?, path: string, out: { { path: string, value:
       end
     else
       for key, item in container do
-        local name = string.gsub(
-          tostring(key),
-          '(%u)',
-          function(letter: string) return '_' .. string.lower(letter) end
-        )
+        local name = report.snakeKey(tostring(key))
         values(item, if path == '' then name else `{path}.{name}`, out)
       end
     end
