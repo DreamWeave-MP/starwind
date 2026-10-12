@@ -1591,8 +1591,13 @@ function dialogue.audit(
   table.insert(stack, options.starwind)
   local effective = dialogue.replay(stack)
   local starwindIds = dialogue.physicalIds(options.starwind.records)
-  local scripts =
-    [for record in options.starwind.records if record.type == 'Script' => tes3.string(record.text)]
+  -- The caller's records and sources are walked, here and below, as the replay walks them: a gap
+  -- in either list is passed over.
+  local scripts = {}
+
+  for _, record in options.starwind.records do
+    if record.type == 'Script' then table.insert(scripts, tes3.string(record.text)) end
+  end
 
   local finalActors = dialogue.actorPopulation(options.final.records)
   local livenessActors = dialogue.livenessActors(options.log)
@@ -1871,7 +1876,11 @@ function dialogue.audit(
     function() return dialogue.provenanceIndex(options.provenance()) end
   )
 
-  local stackNames = [for {name} in stack => name]
+  local stackNames = {}
+
+  for _, source in stack do
+    table.insert(stackNames, source.name)
+  end
 
   local result = report.object {
     'summary',
