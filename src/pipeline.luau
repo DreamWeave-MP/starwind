@@ -156,13 +156,15 @@ local function commonPreprocess(work: Work)
     return nil
   end)
 
-  for _, cell in sources.JunkCells do
-    apply(
-      work,
-      { v115, patch },
-      function(records) return (surgery.deleteIds(records, { 'Cell', 'PathGrid' }, { cell })) end
-    )
-  end
+  -- One `tes3cmd delete` for each junk cell, in the build: a record goes if any names it, so
+  -- one walk of each plugin for them all leaves what the walks one after another left.
+  apply(
+    work,
+    { v115, patch },
+    function(records)
+      return (surgery.deleteIds(records, { 'Cell', 'PathGrid' }, sources.JunkCells))
+    end
+  )
 
   apply(work, { v115, patch }, function(records) return (surgery.deleteExteriorCells(records)) end)
 
