@@ -154,28 +154,140 @@ local function compactActor(record: Record, source: string, index: number): { [s
   }
 end
 
--- Every scalar in a value with its dotted path, as `record_values` walks it.
-local function values(value: Value?, path: string, out: { { path: string, value: Value } })
+-- The ids a scan looks for, all lowercase, and what it has learned of the values it has met:
+-- for each string and boolean, its text lowercased when that is one of the ids, and false when
+-- it isn't. Most of a plugin's strings are ids and types it holds many times over. `numbers` is
+-- whether some id is a number's text, which is the only way a number names one.
+type Sought = {
+  ids: { [string]: boolean },
+  known: { [string | boolean]: string | false },
+  numbers: boolean,
+}
+
+local function seeking(ids: { [string]: boolean }): Sought
+  local numbers = false
+
+  for id in ids do
+    numbers = numbers or tonumber(id) ~= nil
+  end
+
+  return { ids = ids, known = {}, numbers = numbers }
+end
+
+-- Which of the ids sought a scalar names, by its text, lowercased, as `record_values` reads
+-- every scalar a record holds.
+local function sought(seek: Sought, value: Value): string?
+  local kind = type(value)
+
+  if kind == 'number' and not seek.numbers then return nil end
+
+  if kind ~= 'string' and kind ~= 'boolean' then
+    local text = string.lower(tostring(value))
+    return if seek.ids[text] then text else nil
+  end
+
+  local key = value :: string | boolean
+  local known = seek.known[key]
+
+  if known == nil then
+    local text = string.lower(tostring(value))
+    known = if seek.ids[text] then text else false
+    seek.known[key] = known
+  end
+
+  return known or nil
+end
+
+-- The dotted path the first `depth` of `steps` lead to, as `record_values` spells one: a list's
+-- step is a place, counted from 0, and a record's is a field's name.
+local function pathTo(steps: { string | number }, depth: number): string
+  local path = ''
+
+  for position = 1, depth do
+    local step = steps[position]
+
+    if type(step) == 'number' then
+      path = `{path}[{step}]`
+    else
+      path = if path == '' then step else `{path}.{step}`
+    end
+  end
+
+  return path
+end
+
+type Hits = { [string]: { Json } }
+
+-- One record's part in a scan: what the scan looks for and where its hits go, the record, and
+-- the steps from it to the value being read.
+type Search = {
+  seek: Sought,
+  exact: Hits,
+  placed: Hits,
+  label: string,
+  file: string,
+  record: Record,
+  recordId: string,
+  recordIndex: number,
+  steps: { string | number },
+}
+
+-- Reads every scalar in `value`, which is `depth` steps into the search's record, as
+-- `record_values` walks one, and keeps each that names an id sought. Only a hit's path is
+-- spelled.
+local function search(found: Search, value: Value?, depth: number)
   if type(value) == 'table' then
     local container = value :: Table
+    local steps = found.steps
 
     if #container > 0 then
       for index, item in container do
-        values(item, `{path}[{(index :: number) - 1}]`, out)
+        steps[depth + 1] = (index :: number) - 1
+        search(found, item, depth + 1)
       end
-    else
-      for key, item in container do
-        local name = report.snakeKey(tostring(key))
-        values(item, if path == '' then name else `{path}.{name}`, out)
-      end
-    end
-  elseif value ~= nil then
-    table.insert(out, { path = path, value = value })
-  end
-end
 
-local function escapePattern(text: string): string
-  return (string.gsub(text, '[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0'))
+      return
+    end
+
+    for key, item in container do
+      steps[depth + 1] = report.snakeKey(tostring(key))
+      search(found, item, depth + 1)
+    end
+
+    return
+  end
+
+  if value == nil then return end
+
+  local target = sought(found.seek, value)
+
+  if not target then return end
+
+  local path = pathTo(found.steps, depth)
+
+  -- A record's own id isn't a reference to it.
+  if path == 'id' and target == found.recordId then return end
+
+  local record = found.record
+  local hit = report.object {
+    'source',
+    found.label,
+    'source_file',
+    found.file,
+    'record_type',
+    record.type :: Json,
+    'record_id',
+    tes3.string(record.id),
+    'record_index',
+    found.recordIndex,
+    'field',
+    path,
+  }
+  table.insert(found.exact[target], hit)
+
+  if record.type == 'Cell' and string.find(path, 'references', 1, true) then
+    table.insert(found.placed[target], hit)
+  end
 end
 
 -- Whether `text` names `id` as a whole word: no word character or hyphen on either side.
@@ -183,7 +295,7 @@ local function mentions(text: string, id: string): boolean
   local start = 1
 
   while true do
-    local first, last = string.find(text, escapePattern(id), start)
+    local first, last = string.find(text, id, start, true)
 
     if not first then return false end
 
@@ -198,54 +310,38 @@ local function mentions(text: string, id: string): boolean
   end
 end
 
-type Hits = { [string]: { Json } }
-
 local function scan(
   records: Records,
   label: string,
   file: string,
-  ids: { [string]: boolean }
+  seek: Sought
 ): (Hits, Hits, Hits)
+  local ids = seek.ids
   local exact, scripts, placed = {}, {}, {}
 
   for id in ids do
     exact[id], scripts[id], placed[id] = report.array(), report.array(), report.array()
   end
 
+  local found: Search = {
+    seek = seek,
+    exact = exact,
+    placed = placed,
+    label = label,
+    file = file,
+    record = {},
+    recordId = '',
+    recordIndex = 0,
+    steps = {},
+  }
+
   for position, record in records do
     local kind = record.type
 
     if kind == 'Dialogue' or kind == 'DialogueInfo' then continue end
 
-    local recordId = norm(record.id)
-    local fields = {}
-    values(record, '', fields)
-
-    for _, field in fields do
-      local target = string.lower(tostring(field.value))
-
-      if not ids[target] or (field.path == 'id' and target == recordId) then continue end
-
-      local hit = report.object {
-        'source',
-        label,
-        'source_file',
-        file,
-        'record_type',
-        kind :: Json,
-        'record_id',
-        tes3.string(record.id),
-        'record_index',
-        position - 1,
-        'field',
-        field.path,
-      }
-      table.insert(exact[target], hit)
-
-      if kind == 'Cell' and string.find(field.path, 'references', 1, true) then
-        table.insert(placed[target], hit)
-      end
-    end
+    found.record, found.recordId, found.recordIndex = record, norm(record.id), position - 1
+    search(found, record, 0)
 
     if kind == 'Script' then
       local text = string.lower(tes3.string(record.text))
@@ -469,8 +565,9 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
       hygiene.apply(state, source.records, source.label)
     end
 
+    local seek = seeking(lateSet)
     local exact, scripts, placed =
-      scan(inputs.final, 'Starwind-Standalone.omwaddon', inputs.finalPath, lateSet)
+      scan(inputs.final, 'Starwind-Standalone.omwaddon', inputs.finalPath, seek)
     local sourceExact, sourceScripts, sourcePlaced = {}, {}, {}
 
     for id in lateSet do
@@ -487,7 +584,7 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
 
     for _, source in sourceList do
       local foundExact, foundScripts, foundPlaced =
-        scan(source.records, source.label, source.path, lateSet)
+        scan(source.records, source.label, source.path, seek)
 
       for id in lateSet do
         table.move(foundExact[id], 1, #foundExact[id], #sourceExact[id] + 1, sourceExact[id])
