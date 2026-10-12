@@ -72,6 +72,14 @@ local function npc(id: string): Record
   }
 end
 
+--- `list` with nothing at `hole`: a list a caller made with a gap in it, which a walk of it
+--- passes over and a count of it doesn't.
+local function gapped<Item>(list: { Item }, hole: number): { Item }
+  local items = list :: { any }
+  items[hole] = nil
+  return list
+end
+
 suite.describe('report', function()
   local report = starwind.report
 
@@ -186,6 +194,84 @@ suite.describe('closure audit', function()
         .. '  "hard_unresolved_unique_ids": 0,\n  "hard_unresolved_source_records": 0,\n'
         .. '  "hard_unresolved_sources_likely_imported": 0\n}'
     )
+  end)
+
+  suite.it('reads the records past a gap in them', function()
+    local records: { Record } = gapped({
+      { type = 'Header', flags = '', fileType = 'Esp', masters = {} },
+      { type = 'Container', flags = '', id = 'Crate', inventory = { { 1, 'Ghost' } } },
+      { type = 'Static', flags = '', id = 'Rock' },
+      { type = 'Container', flags = '', id = 'Chest', inventory = { { 1, 'Phantom' }, { 1, 'Crate' } } },
+    }, 3)
+    local path = jess.fs.join(folder 'starwind-closure-gap', 'closure.json')
+    local closure = starwind.audit.closure(records, path, function() return {} end)
+
+    expect(closure.hard).toBe(2)
+    expect((closure.report :: Record).hard_missing_ids).toEqual { 'ghost', 'phantom' }
+  end)
+end)
+
+suite.describe('main-quest guard', function()
+  suite.it('names every staged plugin, past a gap in the list of them', function()
+    local anchored: { Record } = { { type = 'Header', flags = '' } }
+
+    for _, anchor in starwind.sources.MainQuestAnchors do
+      table.insert(anchored, { type = anchor[1], flags = '', id = anchor[2] })
+    end
+
+    local placed: { Record } = {}
+
+    for _, anchor in starwind.sources.MainQuestCellReferenceAnchors do
+      table.insert(placed, { id = anchor, refrIndex = #placed + 1 })
+    end
+
+    table.insert(anchored, { type = 'Cell', flags = '', name = 'Bay', references = placed })
+
+    local staged = gapped({
+      { name = 'one', records = { { type = 'Header', flags = '' } } },
+      { name = 'two', records = { { type = 'Header', flags = '' } } },
+      { name = 'three', records = anchored },
+    }, 2)
+    local checks: { Record } = {}
+    local path = jess.fs.join(folder 'starwind-guard-gap', 'guard.json')
+    starwind.audit.mainQuest('a gap', staged, checks, path)
+
+    expect(#checks).toBe(1)
+    expect(checks[1].paths).toEqual { 'one', 'three' }
+    expect(checks[1].missing).toEqual {}
+    expect(checks[1].missing_cell_references).toEqual {}
+  end)
+end)
+
+suite.describe('hygiene audit', function()
+  suite.it('classifies every source, past a gap in the sources and in the masters', function()
+    local topic: Record = { type = 'Dialogue', flags = '', id = 'Ships', dialogueType = 'Topic' }
+
+    local function source(label: string, said: Record): Record
+      return {
+        path = `{label}.json`,
+        binary = `{label}.esm`,
+        label = label,
+        records = { { type = 'Header', flags = '' }, topic, said },
+      }
+    end
+
+    local parent = source('Morrowind', info('100', '', '200', 'Old_Pilot'))
+    local unread = source('Unread', info('100', '', '', ''))
+    local vanilla = gapped({ parent, unread, source('Bloodmoon', info('300', '', '', '')) }, 2)
+    local sources = gapped({
+      source('V1.15', info('100', '', '200', 'Old_Pilot')),
+      unread,
+      source('Patch', info('100', '', '400', 'Old_Pilot')),
+    }, 2)
+    local path = jess.fs.join(folder 'starwind-hygiene-gap', 'hygiene.json')
+    local result = starwind.hygiene.audit(vanilla, sources, {}, path)
+    local reports = result.sources :: { Record }
+
+    expect(result.vanilla_load_order).toEqual { 'Morrowind.json', 'Bloodmoon.json' }
+    expect(#reports).toBe(2)
+    expect(reports[1].source_json).toBe 'V1.15.json'
+    expect(reports[2].source_json).toBe 'Patch.json'
   end)
 end)
 
@@ -376,6 +462,36 @@ suite.describe('dialogue audit', function()
     expect(report.actor_population_source).toBe 'final (fallback; no Rust snapshot found)'
     expect(read(path)).toBe(golden 'content-audit.json')
   end)
+
+  suite.it('reads the plugin past a gap in its records, and the masters past one in theirs', function()
+    local header: Record = { type = 'Header', flags = '', masters = {} }
+    local topic: Record = { type = 'Dialogue', flags = '', id = 'Ships', dialogueType = 'Topic' }
+    local said = info('100', '', '', '')
+    -- Only the script makes Morrowind's topic a live one, and it sits past the gap.
+    local adds: Record = { type = 'Script', flags = '', id = 'Adds', text = 'begin adds\naddtopic ships\nend' }
+    local path = jess.fs.join(folder 'starwind-audit-gap', 'audit.json')
+
+    local report = starwind.dialogue.audit {
+      final = { name = 'final', records = { header, topic, said } },
+      starwind = { name = 'Starwind', records = gapped({ header, npc 'SW_Mechanic', adds }, 2) },
+      bases = gapped({
+        { name = 'Morrowind.esm', records = { header, topic, said } },
+        { name = 'Tribunal.esm', records = { header } },
+        { name = 'Bloodmoon.esm', records = { header } },
+      }, 2),
+      log = {},
+      logPath = 'decoupleLog.txt',
+      provenance = function() return {} end,
+      provenanceNames = {},
+      reportPath = path,
+    }
+
+    local summary = report.summary :: Record
+    expect(report.reconstruction_stack).toEqual { 'Morrowind.esm', 'Bloodmoon.esm', 'Starwind' }
+    expect(summary.expected_live_dialogues).toBe(1)
+    expect(summary.missing_dialogues).toBe(0)
+    expect(summary.extra_dialogues).toBe(0)
+  end)
 end)
 
 suite.describe('tes3cmd\'s text', function()
@@ -445,6 +561,24 @@ suite.describe('tes3cmd\'s text', function()
 
     local all = table.concat([for byte in range(0, 255) => string.char(byte)])
     expect(surgery.bytesField(surgery.toBytesField(all))).toBe(all)
+  end)
+
+  suite.it('deletes from an inventory what holds the text, past a gap in it', function()
+    local records: { Record } = {
+      { type = 'Header', flags = '' },
+      {
+        type = 'Container',
+        flags = 'PERSISTENT',
+        id = 'Crate',
+        inventory = gapped({ { 1, 'Junk' }, { 5, 'Bolt' }, { 2, 'Gem' }, { 3, 'junkyard' } }, 2),
+      },
+      { type = 'Container', flags = '', id = 'Other', inventory = { { 1, 'Junk' } } },
+    }
+
+    expect(surgery.deleteInventory(records, 'CRATE', 'object:junk')).toBe(2)
+    expect(records[2].inventory).toEqual { { 2, 'Gem' } }
+    expect(records[2].flags).toBe ''
+    expect(records[3].inventory).toEqual { { 1, 'Junk' } }
   end)
 end)
 
