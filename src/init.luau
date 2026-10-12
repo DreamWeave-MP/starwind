@@ -56,17 +56,11 @@ local function ensureDir(path: string)
   if not jess.fs.isDir(path) then jess.fs.createDir(path) end
 end
 
+local Inherited = { 'Morrowind', 'Tribunal', 'Bloodmoon', 'Minimal' }
+
 -- The Definitive sources other than Bethesda's and Minimal, as the dialogue audit's provenance.
 local function provenanceKeys(): { string }
-  local keys = {}
-
-  for _, source in sources.Included do
-    if not table.find({ 'Morrowind', 'Tribunal', 'Bloodmoon', 'Minimal' }, source.key) then
-      table.insert(keys, source.key)
-    end
-  end
-
-  return keys
+  return [for {key} in sources.Included if not table.find(Inherited, key) => key]
 end
 
 local function sourceByKey(key: string): sources.Source
@@ -146,7 +140,6 @@ local function build(options: Options): { [string]: Json }
   end
 
   local vanilla = { raw 'Morrowind', raw 'Tribunal', raw 'Bloodmoon' }
-  local corpus = {}
 
   local corpusKeys = {
     'Minimal',
@@ -161,27 +154,18 @@ local function build(options: Options): { [string]: Json }
     'PartyHats',
   }
 
-  for _, key in corpusKeys do
-    table.insert(corpus, labelled(key))
-  end
-
+  local corpus = [for key in corpusKeys => labelled(key)]
   hygiene.audit(vanilla, corpus, { labelled 'V115', labelled 'Patch' }, paths.hygiene)
   stage 'hygiene'
 
   local checks: { Json } = {}
 
   local function active(): { audit.Staged }
-    local list = {}
-
-    for _, source in sources.Included do
-      local records = staged[source.binary]
-
-      if records then
-        table.insert(list, { name = jess.fs.join(work, source.binary), records = records })
-      end
-    end
-
-    return list
+    return [
+      for {binary} in sources.Included
+      if staged[binary]
+      => { name = jess.fs.join(work, binary), records = staged[binary] }
+    ]
   end
 
   audit.mainQuest('before-definitive-preprocess', active(), checks, paths.mainQuest)
@@ -226,15 +210,13 @@ local function build(options: Options): { [string]: Json }
     paths.mainQuest
   )
 
-  local closure = audit.closure(finalRecords, paths.closure, function()
-    local all = {}
-
-    for _, source in sources.Included do
-      table.insert(all, compiled.raw[source.binary])
+  local closure = audit.closure(
+    finalRecords,
+    paths.closure,
+    function()
+      return [for {binary} in sources.Included if compiled.raw[binary] => compiled.raw[binary]]
     end
-
-    return all
-  end)
+  )
 
   if closure.hard > 0 then
     error(`unresolved hard dependencies: {closure.hard} (see {paths.closure})`)
@@ -243,11 +225,7 @@ local function build(options: Options): { [string]: Json }
   stage 'closure'
 
   local keys = provenanceKeys()
-  local provenanceNames = {}
-
-  for _, key in keys do
-    table.insert(provenanceNames, compiled.files[key].path)
-  end
+  local provenanceNames = [for key in keys => compiled.files[key].path]
 
   local dialogueReport, projection, liveness = dialogue.audit {
     final = { name = paths.final, records = finalRecords },
@@ -260,23 +238,16 @@ local function build(options: Options): { [string]: Json }
     log = decoupled.log,
     logPath = paths.log,
     provenance = function()
-      local list = {}
-
-      for _, key in keys do
-        table.insert(
-          list,
-          { name = compiled.files[key].path, records = compiled.raw[sourceByKey(key).binary] }
-        )
-      end
-
-      return list
+      return [
+        for key in keys
+        => { name = compiled.files[key].path, records = compiled.raw[sourceByKey(key).binary] }
+      ]
     end,
     provenanceNames = provenanceNames,
     reportPath = paths.dialogue,
   }
 
   local summary = dialogueReport.summary :: { [string]: Json }
-  local hard = {}
 
   local hardKeys = {
     'missing_dialogues',
@@ -290,9 +261,7 @@ local function build(options: Options): { [string]: Json }
     'standalone_orphan_infos',
   }
 
-  for _, key in hardKeys do
-    if summary[key] ~= 0 then table.insert(hard, `{key}={summary[key]}`) end
-  end
+  local hard = [for key in hardKeys if summary[key] ~= 0 => `{key}={summary[key]}`]
 
   if #hard > 0 then error(`definitive dialogue validation failed: {table.concat(hard, ', ')}`) end
 
@@ -324,17 +293,14 @@ local function build(options: Options): { [string]: Json }
   stage 'split'
 
   if options.strict then
-    local structural = {}
-
     local structuralKeys = {
       'engine_order_mismatches',
       'standalone_physical_order_mismatches',
       'serialized_link_mismatches',
     }
 
-    for _, key in structuralKeys do
-      if summary[key] ~= 0 then table.insert(structural, `{key}={summary[key]}`) end
-    end
+    local structural =
+      [for key in structuralKeys if summary[key] ~= 0 => `{key}={summary[key]}`]
 
     if #structural > 0 then
       error(`strict dialogue validation failed: {table.concat(structural, ', ')}`)
