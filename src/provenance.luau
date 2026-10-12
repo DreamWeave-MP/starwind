@@ -65,10 +65,13 @@ local function copies(log: { string }): { [string]: Json }
   local result: { [string]: Json } = {}
 
   for index = afterSnapshot(log), #log do
-    local id, kind, source = string.match(
-      log[index],
-      'Copying \'(.+)\' %(([^)]+)%) to \'Starwind%.esp\' from \'([^\']+)\''
-    )
+    local line = log[index]
+
+    -- Few lines are a copy's, and the pattern is tried from every place in one that isn't.
+    if not string.find(line, 'Copying \'', 1, true) then continue end
+
+    local id, kind, source =
+      string.match(line, 'Copying \'(.+)\' %(([^)]+)%) to \'Starwind%.esp\' from \'([^\']+)\'')
 
     if id and ActorTypes[kind :: string] and result[norm(id)] == nil then
       result[norm(id)] =
