@@ -693,15 +693,10 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
         )
       end
 
-      local nonDialogue = report.array()
-
-      for _, value in exact[id] do
-        local hit = value :: { [string]: Json }
-
-        if hit.record_type ~= 'Npc' and hit.record_type ~= 'Creature' then
-          table.insert(nonDialogue, hit)
-        end
-      end
+      local hits = exact[id] :: { { [string]: Json } }
+      local nonDialogue = report.array(
+        [for hit in hits if hit.record_type ~= 'Npc' and hit.record_type ~= 'Creature' => hit]
+      )
 
       local causal = report.array()
 
