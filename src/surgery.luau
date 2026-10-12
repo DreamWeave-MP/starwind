@@ -494,15 +494,17 @@ function surgery.deleteInventory(records: Records, id: string, text: string): nu
   for index, record in records do
     if record.type ~= 'Container' or surgery.id(record) ~= string.lower(id) then continue end
 
-    local held = (record.inventory or {}) :: { Table }
+    local inventory = {}
 
-    local inventory = [
-      for entry in held
-      if not tes3.containsNoCase(`Count:{entry[1]}  Object:{tes3.string(entry[2])}`, text)
-      => entry
-    ]
+    -- The caller's record is walked, not counted: a gap in its inventory is passed over.
+    for _, entry in (record.inventory or {}) :: { Table } do
+      if tes3.containsNoCase(`Count:{entry[1]}  Object:{tes3.string(entry[2])}`, text) then
+        deleted += 1
+      else
+        table.insert(inventory, entry)
+      end
+    end
 
-    deleted += #held - #inventory
     local copy = rebuilt(record)
     copy.inventory = inventory
     records[index] = copy
