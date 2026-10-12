@@ -399,13 +399,18 @@ function hygiene.audit(
   layered: { Source },
   path: string
 ): { [string]: Json }
+  local reports = report.array()
   -- Classifying reads the state and never changes it, so one baseline serves every source.
   local baseline = hygiene.vanillaState(vanilla)
 
-  local reports = report.array([
-    for source in corpus
-    => hygiene.classify(source, baseline, 'Morrowind -> Tribunal -> Bloodmoon (vanilla baseline)')
-  ])
+  -- The caller's lists are walked, here and below, as `vanillaState` walks one: a gap in one is
+  -- passed over.
+  for _, source in corpus do
+    table.insert(
+      reports,
+      hygiene.classify(source, baseline, 'Morrowind -> Tribunal -> Bloodmoon (vanilla baseline)')
+    )
+  end
 
   local state = hygiene.vanillaState(vanilla)
   local layeredReports = report.array()
@@ -415,7 +420,11 @@ function hygiene.audit(
     hygiene.apply(state, source.records, source.label)
   end
 
-  local paths = report.array([for {path} in vanilla => path])
+  local paths = report.array()
+
+  for _, source in vanilla do
+    table.insert(paths, source.path)
+  end
 
   local result = report.object {
     'version',
