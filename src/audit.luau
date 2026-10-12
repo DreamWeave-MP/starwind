@@ -145,7 +145,13 @@ function audit.mainQuest(stage: string, staged: { Staged }, checks: { Json }, pa
     records, cells = missing(found, references)
   end
 
-  local names = [for {name} in staged => name]
+  -- The caller's list is walked as the scans above walk it, a gap in it passed over.
+  local names = {}
+
+  for _, plugin in staged do
+    table.insert(names, plugin.name)
+  end
+
   table.insert(
     checks,
     report.object {
@@ -219,12 +225,16 @@ function audit.closure(records: Records, path: string, knownSources: () -> { Rec
     if id ~= '' then ids[string.lower(id)] = true end
   end
 
-  local hard: { dependencies.Dependency } = [
-    for index, record in enumerate(records)
-    for dependency in dependencies.of(record, index - 1)
-    if dependencies.HardKinds[dependency.kind] and not ids[dependency.target]
-    => dependency
-  ]
+  -- The caller's records are walked as the ids above were, a gap in them passed over.
+  local hard: { dependencies.Dependency } = {}
+
+  for index, record in records do
+    for _, dependency in dependencies.of(record, index - 1) do
+      if dependencies.HardKinds[dependency.kind] and not ids[dependency.target] then
+        table.insert(hard, dependency)
+      end
+    end
+  end
 
   local known: { [string]: boolean } = {}
 
