@@ -1053,14 +1053,14 @@ function corpus.write(root: string, world: World)
   end
 end
 
---- `records` with the INFOs of every third topic in the reverse of their order, their links as
---- they were: a plugin whose dialogue has drifted from what the build writes.
-function corpus.drifted(records: Records): Records
+--- `records` with the INFOs of every `every`th topic in the reverse of their order, their links
+--- as they were: a plugin whose dialogue has drifted from what the build writes.
+function corpus.drifted(records: Records, every: number): Records
   local drifted = table.clone(records)
   local topics, first = 0, 0
 
   local function turn(last: number)
-    if first == 0 or topics % 3 ~= 0 then return end
+    if first == 0 or topics % every ~= 0 then return end
 
     for offset = 0, (last - first - 1) // 2 do
       local low, high = first + offset, last - offset

@@ -1,0 +1,228 @@
+--!strict
+-- The Definitive build, timed from Luau: `build` over a sw_merged folder made up for it (see
+-- tests/corpus.luau), whole and stage by stage, and the dialogue audit over that build once its
+-- INFOs have drifted, which is the audit doing all it can do. Run by
+--
+--   jess run --package . --package-path .. --capability filesystem.read
+--     --capability filesystem.write bench/bench.luau <scratch> [filter]
+--
+-- on a release build. `scratch` is a folder to write the sources and the build into.
+--
+-- Prints one line per workload: its name, a tab, and the seconds one call takes. A stage's line
+-- is the stage's own time within the whole build's, as `build` itself reports it. Everything a
+-- workload writes is hashed, before the timing and after it, and has to come to the hash written
+-- here: a build that stopped doing the work, or does other work, fails instead of posting a time.
+local bytes = require '@dream/bytes'
+local corpus = require '../tests/corpus'
+local fs = require '@dream/fs'
+local starwind = require '@starwind'
+
+-- A build without the verified toolchain runs Luau slower than a release does, so a number from
+-- one says nothing about what ships.
+if not jess.bench.verified then
+  error(
+    'starwind bench: this jess was built without the verified toolchain: measure on a release build',
+    0
+  )
+end
+
+--- A folder to write into; and a filter on the workload names, none running them all.
+local scratch: string?, filter: string? = ...
+local only = if filter and filter ~= '' then filter else nil
+
+if not scratch then error('starwind bench: a scratch folder to build in is required', 0) end
+
+local Shape: corpus.Shape = {
+  objects = 4000,
+  topics = 320,
+  infos = 10,
+  vanillaCells = 32,
+  own = 2000,
+  actors = 240,
+  cells = 40,
+  references = 160,
+  ownTopics = 120,
+}
+
+-- What the build of `Shape` writes, every file's digest hashed together; and the drifted audit's
+-- report.
+local Built = '08bd186b907bca2ba4821243c47a0ba9ae7915cc45af3a15b12430943db889e0'
+local Drifted = 'ee73457be515eb8235c68000886ae8cc8dbc27468ae033bbdc1ea88b1d8f3a90'
+
+-- The build's stages, in the order it runs them.
+local Stages = {
+  'compile',
+  'hygiene',
+  'preprocess',
+  'merge',
+  'decouple',
+  'write',
+  'read back',
+  'closure',
+  'dialogue audit',
+  'late actors',
+  'split',
+  'manifest',
+}
+
+local function median(samples: { number }): number
+  table.sort(samples)
+  return samples[(#samples + 1) // 2]
+end
+
+-- A full collection, run between batches, so one batch's garbage isn't the next one's collection.
+local collect = jess.bench.collect
+
+local function wanted(name: string): boolean
+  return not only or string.find(name, only, 1, true) ~= nil
+end
+
+local function check(name: string, got: string, expected: string)
+  if got ~= expected then error(`{name}: what it wrote hashes to {got}, not {expected}`, 0) end
+end
+
+local root = jess.fs.join(scratch, 'starwind-bench')
+
+if jess.fs.exists(root) then assert(fs.remove(root, { recursive = true })) end
+
+local world = corpus.world(Shape)
+local sourceRecords = 0
+
+for _, records in world do
+  sourceRecords += #records
+end
+
+corpus.write(root, world)
+
+--- Every file a build wrote under `output`, as one hash: each file's path and digest, in the
+--- order of the paths.
+local function written(output: string): string
+  local digests = corpus.digests(root, output)
+  local names = {}
+
+  for name in digests do
+    table.insert(names, name)
+  end
+
+  table.sort(names)
+
+  local hasher = bytes.hasher 'sha256'
+
+  for _, name in names do
+    hasher:update(`{name} {digests[name]}\n`)
+  end
+
+  return hasher:finish()
+end
+
+-- The whole build, strict and keeping its work: eight of them, the first to warm up, the last
+-- seven timed, each stage's time the median of its seven.
+local building = `the build of {sourceRecords} source records`
+
+if wanted(building) then
+  local output = jess.fs.join(root, '.swbuild', 'definitive')
+
+  local function build(): (number, { [string]: number })
+    local timings: { [string]: number } = {}
+    collect()
+    local start = os.clock()
+    starwind.build { root = root, strict = true, keepWork = true, timings = timings }
+    return os.clock() - start, timings
+  end
+
+  build()
+  check(building, written(output), Built)
+
+  local whole: { number } = {}
+  local stages: { [string]: { number } } = {}
+
+  for _, stage in Stages do
+    stages[stage] = {}
+  end
+
+  for batch = 1, 7 do
+    local seconds, timings = build()
+    whole[batch] = seconds
+
+    for _, stage in Stages do
+      stages[stage][batch] = timings[stage]
+    end
+  end
+
+  check(building, written(output), Built)
+  print(`{building}\t{median(whole)}`)
+
+  for _, stage in Stages do
+    print(`the build: {stage}\t{median(stages[stage])}`)
+  end
+end
+
+--- Seconds per call of `body`: warmed up, then the median of seven batches of a size that takes
+--- about a tenth of a second. What `body` wrote, which `hashed` hashes, has to come to
+--- `expected` before the batches and after them.
+local function measure(name: string, expected: string, body: () -> (), hashed: () -> string): number
+  collect()
+  body()
+  check(name, hashed(), expected)
+  local start = os.clock()
+  body()
+  local once = math.max(os.clock() - start, 1e-7)
+  local iterations = math.max(1, math.floor(0.1 / once))
+  local samples = {}
+
+  for batch = 1, 7 do
+    collect()
+    start = os.clock()
+
+    for _ = 1, iterations do
+      body()
+    end
+
+    samples[batch] = (os.clock() - start) / iterations
+  end
+
+  check(name, hashed(), expected)
+  return median(samples)
+end
+
+-- The dialogue audit of that build with the INFOs of every sixth topic turned round: every
+-- order it finds wrong weighed pair by pair, and each pair it can't prove harmless traced to
+-- the sources.
+local Auditing = 'the dialogue audit of that build, its INFOs drifted'
+
+if wanted(Auditing) then
+  local pipeline = starwind.pipeline
+  local staged, compiled = pipeline.compile(jess.fs.join(root, 'plugins'))
+  pipeline.preprocess(staged)
+  pipeline.merge(staged)
+  local decoupled = pipeline.decouple(staged)
+  local path = jess.fs.join(root, 'drifted-dialogue-chain-audit.json')
+
+  local options = {
+    final = { name = 'final', records = corpus.drifted(decoupled.final, 6) },
+    starwind = { name = 'Starwind', records = decoupled.preAddVanilla },
+    bases = {
+      { name = 'Morrowind.esm', records = staged['Morrowind.esm'] },
+      { name = 'Tribunal.esm', records = staged['Tribunal.esm'] },
+      { name = 'Bloodmoon.esm', records = staged['Bloodmoon.esm'] },
+    },
+    log = decoupled.log,
+    logPath = 'decoupleLog.txt',
+    provenance = function()
+      return {
+        { name = 'V1.15', records = compiled.raw['StarwindRemasteredV1.15.esm'] },
+        { name = 'Patch', records = compiled.raw['StarwindRemasteredPatch.esm'] },
+      }
+    end,
+    provenanceNames = { 'V1.15', 'Patch' },
+    reportPath = path,
+  }
+
+  local seconds = measure(
+    Auditing,
+    Drifted,
+    function() starwind.dialogue.audit(options) end,
+    function() return bytes.sha256(assert(jess.fs.read(path))) end
+  )
+  print(`{Auditing}\t{seconds}`)
+end

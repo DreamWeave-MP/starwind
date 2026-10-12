@@ -194,7 +194,7 @@ suite.describe('dialogue audit', function()
     end
 
     local report = starwind.dialogue.audit {
-      final = { name = 'final', records = corpus.drifted(decoupled.final) },
+      final = { name = 'final', records = corpus.drifted(decoupled.final, 3) },
       starwind = { name = 'Starwind', records = decoupled.preAddVanilla },
       bases = {
         { name = 'Morrowind.esm', records = staged['Morrowind.esm'] },
