@@ -287,18 +287,19 @@ function split.choose(records: Records): ({ [number]: boolean }, { Json })
     if #demote == 0 then return candidates, demotions end
 
     for _, item in demote do
-      local place = item.index + 1
-      candidates[item.index] = nil
+      local {index, record, dependency} = item
+      local place = index + 1
+      candidates[index] = nil
       name(content, keys[place], kinds[place], ids[place])
       table.insert(
         demotions,
         report.object {
           'type',
-          tes3.string(item.record.type),
+          tes3.string(record.type),
           'id',
-          tes3.auditId(item.record),
+          tes3.auditId(record),
           'dependency',
-          dependencyJson(item.dependency),
+          dependencyJson(dependency),
           'reason',
           'dependency resolves to Starwind content',
         }
@@ -425,9 +426,7 @@ export type Written = { header: Record, records: Records, bytes: { string } }
 
 local function readBack(plugin: core.Plugin): (Records, { string })
   local records, bytes = tes3conv.recordsWithBytes(plugin)
-  table.remove(records, 1)
-  table.remove(bytes, 1)
-  return records, bytes
+  return records[2:#records], bytes[2:#bytes]
 end
 
 local function sortedNames(names: { string }): { Json }
@@ -770,10 +769,7 @@ function split.split(
     table.insert(approved, id)
   end
 
-  local dataBody = table.clone(dataRecords)
-  table.remove(dataBody, 1)
-  local contentBody = table.clone(contentRecords)
-  table.remove(contentBody, 1)
+  local dataBody, contentBody = dataRecords[2:#dataRecords], contentRecords[2:#contentRecords]
 
   report.set(result, 'source', paths.source)
   report.set(result, 'data_output', paths.data)
