@@ -1,0 +1,16 @@
+{
+  "ai_packages": [
+    {
+      "game_hour": 1
+    },
+    []
+  ],
+  "data": {
+    "nested": {
+      "deeper_still": true
+    },
+    "speaker_rank": -1
+  },
+  "filters": [],
+  "speaker_id": "x"
+}

@@ -1,0 +1,104 @@
+{
+  "header": {
+    "file_type": "Esp",
+    "flags": "",
+    "masters": [
+      [
+        "Morrowind.esm",
+        7
+      ]
+    ],
+    "type": "Header"
+  },
+  "counts": {
+    "records_including_header": 6,
+    "masters": 1,
+    "hard_unresolved_occurrences": 8,
+    "hard_unresolved_unique_ids": 6,
+    "hard_unresolved_source_records": 3,
+    "hard_unresolved_sources_likely_imported": 2
+  },
+  "hard_by_kind": {
+    "npc.inventory": 2,
+    "container.script": 1,
+    "container.inventory": 1,
+    "npc.spells": 1,
+    "npc.ai.activate": 1,
+    "npc.class": 1,
+    "cell.region": 1
+  },
+  "hard_unresolved": [
+    {
+      "target": "gone",
+      "target_original": "Gone",
+      "source_type": "Container",
+      "source_id": "Crate",
+      "kind": "container.script",
+      "source_provenance": "KNOWN_INPUT"
+    },
+    {
+      "target": "ghost",
+      "target_original": "Ghost",
+      "source_type": "Container",
+      "source_id": "Crate",
+      "kind": "container.inventory",
+      "source_provenance": "KNOWN_INPUT"
+    },
+    {
+      "target": "ghost",
+      "target_original": "GHOST",
+      "source_type": "Npc",
+      "source_id": "Pilot",
+      "kind": "npc.inventory",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    },
+    {
+      "target": "phantom",
+      "target_original": "Phantom",
+      "source_type": "Npc",
+      "source_id": "Pilot",
+      "kind": "npc.inventory",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    },
+    {
+      "target": "ghost",
+      "target_original": "ghost",
+      "source_type": "Npc",
+      "source_id": "Pilot",
+      "kind": "npc.spells",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    },
+    {
+      "target": "lever",
+      "target_original": "Lever",
+      "source_type": "Npc",
+      "source_id": "Pilot",
+      "kind": "npc.ai.activate",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    },
+    {
+      "target": "nobody",
+      "target_original": "Nobody",
+      "source_type": "Npc",
+      "source_id": "Pilot",
+      "kind": "npc.class",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    },
+    {
+      "target": "nowhere",
+      "target_original": "Nowhere",
+      "source_type": "Cell",
+      "source_id": "Bay",
+      "kind": "cell.region",
+      "source_provenance": "FINAL_ONLY_LIKELY_IMPORTED"
+    }
+  ],
+  "hard_missing_ids": [
+    "ghost",
+    "gone",
+    "lever",
+    "nobody",
+    "nowhere",
+    "phantom"
+  ]
+}

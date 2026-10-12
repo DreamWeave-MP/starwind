@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "log": "decoupleLog.txt",
+  "standalone": "Starwind.omwaddon",
+  "snapshot_actor_count": 1,
+  "final_actor_count": 3,
+  "late_actor_count": 2,
+  "late_actor_class_counts": {
+    "A": 1,
+    "D": 1
+  },
+  "class_a_info_ids_by_source": {
+    "StarwindRemasteredPatch.json": [
+      "100"
+    ]
+  },
+  "dialogue_liveness_audit": {
+    "live_topics": 1
+  },
+  "actors": [
+    {
+      "actor": {
+        "id": "Late_Smuggler",
+        "type": "Npc",
+        "race": "Human",
+        "class": "Pilot",
+        "faction": "",
+        "sex": "male",
+        "script": "",
+        "source": "Starwind.omwaddon",
+        "source_record_index": 3
+      },
+      "source_master": "Morrowind.esm",
+      "source_record_index": 2,
+      "copy_log_line": null,
+      "why_imported_on_second_closure": {
+        "direct_live_dialogue_speaker_id_references": 1,
+        "non_dialogue_exact_references": 1,
+        "source_reference_candidates": 0,
+        "causal_dependency_imports": 1,
+        "reason_class": "D",
+        "classification_rationale": "has a surviving non-dialogue dependency in the final standalone"
+      },
+      "surviving_info_references": [
+        {
+          "dial": "ships",
+          "info_id": "400",
+          "source": "StarwindRemasteredPatch.json",
+          "source_record_index": 3,
+          "hygiene_classification": "NEW_INFO",
+          "tescs_dirt_confidence": null,
+          "changed_links": {},
+          "parent_source": null,
+          "parent_record_index": null,
+          "speaker_id": "Late_Smuggler",
+          "speaker_race": "",
+          "speaker_class": "",
+          "speaker_faction": "",
+          "speaker_cell": "",
+          "speaker_sex": "Any",
+          "speaker_rank": -1,
+          "player_faction": "",
+          "text": "says 400",
+          "result": "",
+          "filters": []
+        }
+      ],
+      "non_dialogue_references": [
+        {
+          "source": "Starwind-Standalone.omwaddon",
+          "source_file": "Starwind.omwaddon",
+          "record_type": "Cell",
+          "record_id": "",
+          "record_index": 4,
+          "field": "references[0].id"
+        }
+      ],
+      "script_text_mentions": [
+        {
+          "source": "Starwind-Standalone.omwaddon",
+          "source_file": "Starwind.omwaddon",
+          "record_type": "Script",
+          "record_id": "Hail",
+          "record_index": 5
+        }
+      ],
+      "placed_references": [
+        {
+          "source": "Starwind-Standalone.omwaddon",
+          "source_file": "Starwind.omwaddon",
+          "record_type": "Cell",
+          "record_id": "",
+          "record_index": 4,
+          "field": "references[0].id"
+        }
+      ],
+      "source_reference_candidates": [],
+      "source_script_text_mentions": [],
+      "source_placed_references": [],
+      "causal_dependency_imports": [
+        {
+          "log_line": 12,
+          "pass": "post-dialogue",
+          "target_type": "NPC_",
+          "target_id": "Late_Smuggler",
+          "source_type": "CELL",
+          "source_id": "Bay",
+          "field": "reference"
+        }
+      ]
+    },
+    {
+      "actor": {
+        "id": "Old_Pilot",
+        "type": "Npc",
+        "race": "Human",
+        "class": "Pilot",
+        "faction": "",
+        "sex": "female",
+        "script": "",
+        "source": "Starwind.omwaddon",
+        "source_record_index": 2
+      },
+      "source_master": "Morrowind.esm",
+      "source_record_index": 1,
+      "copy_log_line": 5,
+      "why_imported_on_second_closure": {
+        "direct_live_dialogue_speaker_id_references": 1,
+        "non_dialogue_exact_references": 0,
+        "source_reference_candidates": 0,
+        "causal_dependency_imports": 1,
+        "reason_class": "A",
+        "classification_rationale": "all surviving speaker_id INFOs are probable TESCS link dirt"
+      },
+      "surviving_info_references": [
+        {
+          "dial": "ships",
+          "info_id": "100",
+          "source": "StarwindRemasteredPatch.json",
+          "source_record_index": 2,
+          "hygiene_classification": "PROBABLE_TESCS_LINK_DIRT",
+          "tescs_dirt_confidence": "HIGH",
+          "changed_links": {
+            "next_id": {
+              "parent": "200",
+              "child": "400"
+            }
+          },
+          "parent_source": "Morrowind",
+          "parent_record_index": 4,
+          "speaker_id": "Old_Pilot",
+          "speaker_race": "",
+          "speaker_class": "",
+          "speaker_faction": "",
+          "speaker_cell": "",
+          "speaker_sex": "Any",
+          "speaker_rank": -1,
+          "player_faction": "",
+          "text": "says 100",
+          "result": "",
+          "filters": []
+        }
+      ],
+      "non_dialogue_references": [],
+      "script_text_mentions": [],
+      "placed_references": [],
+      "source_reference_candidates": [],
+      "source_script_text_mentions": [],
+      "source_placed_references": [],
+      "causal_dependency_imports": [
+        {
+          "log_line": 7,
+          "pass": "post-dialogue",
+          "target_type": "NPC_",
+          "target_id": "Old_Pilot",
+          "source_type": "INFO",
+          "source_id": "100",
+          "field": "speaker_id",
+          "source_topic": "Ships"
+        }
+      ]
+    }
+  ]
+}
