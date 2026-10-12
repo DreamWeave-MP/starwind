@@ -155,53 +155,54 @@ local TargetTypes: { [string]: { [string]: boolean } } = {
 
 local ScriptTarget = set { 'Script' }
 
--- Record keys are "Type\0id", the id lowercased.
+-- Record keys are "Type\0id", the id lowercased. A namespace holds a set of them the other way
+-- round, the types that are there under each id, which is how a dependency asks for one: by its
+-- target's id, of whichever types its field can name.
 type Namespace = { [string]: { [string]: boolean } }
 
-local function key(kind: string, id: string): string return `{kind}\0{id}` end
-
-local function recordKey(record: Record): string?
+-- A record's key, and the type and the id it is made of. None for a record with no id.
+local function recordKey(record: Record): (string?, string, string)
   local id = tes3.auditId(record)
 
-  if id == '' then return nil end
+  if id == '' then return nil, '', '' end
 
-  return key(tes3.string(record.type), string.lower(id))
+  local kind, lowered = tes3.string(record.type), string.lower(id)
+  return `{kind}\0{lowered}`, kind, lowered
 end
 
-local function namespace(keys: { [string]: boolean }): Namespace
-  local result: Namespace = {}
-
-  for recordKey in keys do
-    local kind, id = string.match(recordKey, '^(.-)%z(.*)$')
-    local types = result[id :: string] or {}
-    result[id :: string] = types
-    types[kind :: string] = true
+-- Puts a key in a namespace. A key is read as a type up to its first NUL and an id after it,
+-- which are the type and the id it was made of unless that type holds a NUL itself.
+local function name(known: Namespace, recordKey: string, kind: string, id: string)
+  if string.find(kind, '\0', 1, true) then
+    local keyKind, keyId = string.match(recordKey, '^(.-)%z(.*)$')
+    kind, id = keyKind :: string, keyId :: string
   end
 
-  return result
+  local types = known[id]
+
+  if not types then
+    types = {}
+    known[id] = types
+  end
+
+  types[kind] = true
 end
 
--- `dependency_target_keys`: the typed records a dependency can resolve to.
-local function targetKeys(dependency: Dependency, known: Namespace): { string }
+-- `dependency_target_keys`, asked of a namespace: whether a dependency can resolve to one of
+-- its records, which is one under the dependency's target of a type its field can name.
+local function resolves(dependency: Dependency, among: Namespace): boolean
+  local present = among[dependency.target]
+
+  if not present then return false end
+
   local types = TargetTypes[dependency.kind]
 
   if types == nil and string.sub(dependency.kind, -7) == '.script' then types = ScriptTarget end
 
-  local present = known[dependency.target] or {}
-  local keys = {}
+  if types == nil then return true end
 
   for kind in present do
-    if types == nil or (types :: { [string]: boolean })[kind] then
-      table.insert(keys, key(kind, dependency.target))
-    end
-  end
-
-  return keys
-end
-
-local function intersects(keys: { string }, against: { [string]: boolean }): boolean
-  for _, recordKey in keys do
-    if against[recordKey] then return true end
+    if types[kind] then return true end
   end
 
   return false
@@ -236,32 +237,27 @@ function split.choose(records: Records): ({ [number]: boolean }, { Json })
     if eligible and tes3.auditId(record) ~= '' then candidates[index - 1] = true end
   end
 
-  local allKeys: { [string]: boolean } = {}
+  -- Each record's key and what it is made of, by the record's place; and the keys of the
+  -- records that aren't candidates, which a candidate demoted joins.
   local keys: { [number]: string } = {}
+  local kinds: { [number]: string }, ids: { [number]: string } = {}, {}
+  local content: Namespace = {}
 
   for index = 2, #records do
-    local recordKey = recordKey(records[index])
+    local recordKey, kind, id = recordKey(records[index])
 
-    if recordKey then
-      allKeys[recordKey] = true
-      keys[index] = recordKey
-    end
+    if not recordKey then continue end
+
+    keys[index], kinds[index], ids[index] = recordKey, kind, id
+
+    if not candidates[index - 1] then name(content, recordKey, kind, id) end
   end
 
-  local known = namespace(allKeys)
-  -- Each candidate's dependencies, with the typed records each can resolve to.
-  local deps: { [number]: { { dependency: Dependency, targets: { string } } } } = {}
+  -- Each candidate's dependencies, read the first time it is looked at.
+  local deps: { [number]: { Dependency } } = {}
   local demotions: { Json } = {}
 
   while true do
-    local contentKeys: { [string]: boolean } = {}
-
-    for index = 2, #records do
-      local recordKey = keys[index]
-
-      if recordKey and not candidates[index - 1] then contentKeys[recordKey] = true end
-    end
-
     local sorted = {}
 
     for index in candidates do
@@ -276,18 +272,13 @@ function split.choose(records: Records): ({ [number]: boolean }, { Json })
       local list = deps[index]
 
       if not list then
-        list = {}
-
-        for _, dependency in dependencies.of(record, index) do
-          table.insert(list, { dependency = dependency, targets = targetKeys(dependency, known) })
-        end
-
+        list = dependencies.of(record, index)
         deps[index] = list
       end
 
-      for _, item in list do
-        if intersects(item.targets, contentKeys) then
-          table.insert(demote, { index = index, record = record, dependency = item.dependency })
+      for _, dependency in list do
+        if resolves(dependency, content) then
+          table.insert(demote, { index = index, record = record, dependency = dependency })
           break
         end
       end
@@ -296,7 +287,9 @@ function split.choose(records: Records): ({ [number]: boolean }, { Json })
     if #demote == 0 then return candidates, demotions end
 
     for _, item in demote do
+      local place = item.index + 1
       candidates[item.index] = nil
+      name(content, keys[place], kinds[place], ids[place])
       table.insert(
         demotions,
         report.object {
@@ -322,24 +315,30 @@ local function header(source: Record, count: number, masters: { Table }, fileTyp
   return copy
 end
 
+-- Where the last record of each key is, the keys in the order they are first met, and the
+-- namespace of them.
 local function uniqueRecords(
   records: Records,
   bytes: { string }?
-): ({ [string]: number }, { string })
+): ({ [string]: number }, { string }, Namespace)
   local byKey: { [string]: number } = {}
   local order = {}
+  local names: Namespace = {}
 
   for index, record in records do
-    local recordKey = recordKey(record)
+    local recordKey, kind, id = recordKey(record)
 
     if recordKey then
-      if byKey[recordKey] == nil then table.insert(order, recordKey) end
+      if byKey[recordKey] == nil then
+        table.insert(order, recordKey)
+        name(names, recordKey, kind, id)
+      end
 
       byKey[recordKey] = index
     end
   end
 
-  return byKey, order
+  return byKey, order, names
 end
 
 local function unresolved(records: Records, known: Namespace): { Dependency }
@@ -347,7 +346,7 @@ local function unresolved(records: Records, known: Namespace): { Dependency }
 
   for index, record in records do
     for _, dependency in dependencies.of(record, index) do
-      if dependencies.HardKinds[dependency.kind] and #targetKeys(dependency, known) == 0 then
+      if dependencies.HardKinds[dependency.kind] and not resolves(dependency, known) then
         table.insert(result, dependency)
       end
     end
@@ -477,32 +476,32 @@ local function validate(source: Written, data: core.Plugin, content: core.Plugin
     counter[bytes] = count - 1
   end
 
-  local dataKeys, contentKeys = {}, {}
+  -- The keys of each half, and of the pair.
+  local dataKeys: { [string]: boolean } = {}
+  local dataNames: Namespace, contentNames: Namespace, pairNames: Namespace = {}, {}, {}
 
   for _, record in dataRecords do
-    local recordKey = recordKey(record)
+    local recordKey, kind, id = recordKey(record)
 
-    if recordKey then dataKeys[recordKey] = true end
+    if not recordKey then continue end
+
+    dataKeys[recordKey] = true
+    name(dataNames, recordKey, kind, id)
+    name(pairNames, recordKey, kind, id)
   end
 
   for _, record in contentRecords do
-    local recordKey = recordKey(record)
+    local recordKey, kind, id = recordKey(record)
 
-    if recordKey then
-      if dataKeys[recordKey] then error 'split produced duplicate type/ID records' end
+    if not recordKey then continue end
 
-      contentKeys[recordKey] = true
-    end
+    if dataKeys[recordKey] then error 'split produced duplicate type/ID records' end
+
+    name(contentNames, recordKey, kind, id)
+    name(pairNames, recordKey, kind, id)
   end
 
-  local allKeys = table.clone(dataKeys)
-
-  for recordKey in contentKeys do
-    allKeys[recordKey] = true
-  end
-
-  local known = namespace(allKeys)
-  local sourceEffective, sourceOrder = uniqueRecords(sourceRecords)
+  local sourceEffective, sourceOrder, sourceNames = uniqueRecords(sourceRecords)
   local pairEffective = uniqueRecords(pairRecords)
   local union: { [string]: boolean } = {}
 
@@ -548,9 +547,7 @@ local function validate(source: Written, data: core.Plugin, content: core.Plugin
 
   for index, record in dataRecords do
     for _, dependency in dependencies.of(record, index) do
-      local targets = targetKeys(dependency, known)
-
-      if intersects(targets, contentKeys) and not intersects(targets, dataKeys) then
+      if resolves(dependency, contentNames) and not resolves(dependency, dataNames) then
         table.insert(dataToContent, dependencyJson(dependency))
       end
     end
@@ -558,22 +555,14 @@ local function validate(source: Written, data: core.Plugin, content: core.Plugin
 
   for index, record in contentRecords do
     for _, dependency in dependencies.of(record, index) do
-      local targets = targetKeys(dependency, known)
-
-      if intersects(targets, dataKeys) and not intersects(targets, contentKeys) then
+      if resolves(dependency, dataNames) and not resolves(dependency, contentNames) then
         table.insert(contentToData, dependencyJson(dependency))
       end
     end
   end
 
-  local sourceKeys: { [string]: boolean } = {}
-
-  for recordKey in sourceEffective do
-    sourceKeys[recordKey] = true
-  end
-
-  local sourceUnresolved = unresolved(sourceRecords, namespace(sourceKeys))
-  local pairUnresolved = unresolved(pairRecords, known)
+  local sourceUnresolved = unresolved(sourceRecords, sourceNames)
+  local pairUnresolved = unresolved(pairRecords, pairNames)
   local sourceIdentities: { [string]: boolean } = {}
 
   for _, dependency in sourceUnresolved do
