@@ -1,8 +1,8 @@
 # starwind benchmarks
 
-`bench/bench.luau` times the package at what it is for: `build`, the whole Definitive build of a
+`bench/bench.jsl` times the package at what it is for: `build`, the whole Definitive build of a
 sw_merged folder, strict and keeping its work. The real folder is the owner's (and most of it is
-Bethesda's), so the bench builds one made up for it by `tests/corpus.luau`, the same every run:
+Bethesda's), so the bench builds one made up for it by `tests/corpus.jsl`, the same every run:
 the thirteen sources as tes3conv JSON, each with what the build does something to in its
 namesake. Morrowind has objects of every type the build follows, the regions Starwind reuses,
 cells that are read lazily and never read, and topics with their chains of INFOs for a speaker, a
@@ -36,7 +36,7 @@ build that does less, or anything else, fails instead of posting a time.
 ```sh
 jess run --package jpk/starwind --package-path jpk \
   --capability filesystem.read --capability filesystem.write \
-  jpk/starwind/bench/bench.luau <scratch folder> [filter]
+  jpk/starwind/bench/bench.jsl <scratch folder> [filter]
 ```
 
 ## The move onto l3i 2.0, base against head

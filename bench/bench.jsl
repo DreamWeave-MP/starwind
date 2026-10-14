@@ -1,10 +1,10 @@
 --!strict
 -- The Definitive build, timed from Luau: `build` over a sw_merged folder made up for it (see
--- tests/corpus.luau), whole and stage by stage, and the dialogue audit over that build once its
+-- tests/corpus.jsl), whole and stage by stage, and the dialogue audit over that build once its
 -- INFOs have drifted, which is the audit doing all it can do. Run by
 --
 --   jess run --package . --package-path .. --capability filesystem.read
---     --capability filesystem.write bench/bench.luau <scratch> [filter]
+--     --capability filesystem.write bench/bench.jsl <scratch> [filter]
 --
 -- on a release build. `scratch` is a folder to write the sources and the build into.
 --
