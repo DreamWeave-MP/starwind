@@ -4,7 +4,9 @@
 -- the order they were set, non-ASCII escaped. Luau tables don't keep key order, so a report's
 -- objects are built with `object`, which records it; arrays with `array`, so an empty one is `[]`.
 
-export type Json = boolean | number | string | JessNull | { [string | number]: Json }
+-- An object and an array are members of their own: Luau's table indexers are invariant, so a
+-- `{ [string]: Json }` that `object` makes, or a `{ Json }`, is not a `{ [string | number]: Json }`.
+export type Json = boolean | number | string | JessNull | { [string]: Json } | { Json } | { [string | number]: Json }
 
 local report = {}
 
