@@ -544,7 +544,7 @@ function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }
   local classA: { [string]: { [string]: boolean } } = {}
 
   if #lateIds > 0 then
-    local lateSet = {}
+    local lateSet: { [string]: boolean } = {}
 
     for _, id in lateIds do
       lateSet[id] = true

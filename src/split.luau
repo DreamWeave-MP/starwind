@@ -196,8 +196,7 @@ local function resolves(dependency: Dependency, among: Namespace): boolean
   if not present then return false end
 
   local types = TargetTypes[dependency.kind]
-
-  if types == nil and string.sub(dependency.kind, -7) == '.script' then types = ScriptTarget end
+    or (if string.sub(dependency.kind, -7) == '.script' then ScriptTarget else nil)
 
   if types == nil then return true end
 

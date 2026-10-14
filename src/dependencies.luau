@@ -190,7 +190,7 @@ local Naming: { [string]: boolean } = {
 }
 
 -- What a record that names nothing depends on. Nothing is ever added to it.
-local None: { Dependency } = table.freeze {}
+local None = table.freeze({} :: { Dependency })
 
 local function list(value: Value?): { Value } return (value or {}) :: { Value } end
 

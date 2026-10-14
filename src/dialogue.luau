@@ -934,7 +934,7 @@ local function castOf(actors: { Actor }): Cast
   return cast
 end
 
-local Nobody: { Actor } = table.freeze {}
+local Nobody = table.freeze({} :: { Actor })
 
 -- The actors both INFOs could be said by, counted, and the first twelve of them. Whatever
 -- either asks of its speaker by name, an id before a race before a class, is asked only of the
@@ -991,7 +991,7 @@ local function mutuallyExclusive(
 
     if firstValue ~= '' and secondValue ~= '' and firstValue ~= secondValue then
       table.insert(reasons, `different_{pair[2]}`)
-      return true, reasons
+      return true, reasons, nil, nil
     end
   end
 
@@ -1006,7 +1006,7 @@ local function mutuallyExclusive(
     and firstSex ~= secondSex
   then
     table.insert(reasons, 'different_speaker_sex')
-    return true, reasons
+    return true, reasons, nil, nil
   end
 
   local firstFaction, secondFaction = norm(first.speakerFaction), norm(second.speakerFaction)
@@ -1022,7 +1022,7 @@ local function mutuallyExclusive(
     and firstRank ~= secondRank
   then
     table.insert(reasons, 'different_exact_speaker_rank')
-    return true, reasons
+    return true, reasons, nil, nil
   end
 
   local bySubject: { [string]: { Table } } = {}
@@ -1055,7 +1055,7 @@ local function mutuallyExclusive(
       end
 
       table.insert(reasons, `contradictory_filter:{table.concat(parts, ':')}`)
-      return true, reasons
+      return true, reasons, nil, nil
     end
   end
 
@@ -1063,7 +1063,7 @@ local function mutuallyExclusive(
 
   if count == 0 then
     table.insert(reasons, 'no_shared_actor_candidate')
-    return true, reasons
+    return true, reasons, nil, nil
   end
 
   return false, reasons, count, sample
