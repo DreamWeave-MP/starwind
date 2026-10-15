@@ -1,5 +1,4 @@
 --!strict
---!native
 --[[
 @starwind: the Starwind Merged Plugin Project's Definitive build, build_starwind.py's
 pipeline in Luau, with no other program run.

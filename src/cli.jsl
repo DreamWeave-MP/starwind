@@ -1,5 +1,4 @@
 --!strict
---!native
 --[[
 @starwind/cli: the Starwind Definitive build's command line.
 
