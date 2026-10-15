@@ -15,16 +15,20 @@ type Record = { [string | number]: any }
 local function folder(name: string): string
   local scratch =
     assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
-  local path = jess.fs.join(scratch, name)
+  local path = fs.join(scratch, name)
 
-  if jess.fs.exists(path) then assert(fs.remove(path, { recursive = true })) end
+  if fs.exists(path) then
+    local done, problem = fs.remove(path, { recursive = true })
+    if not done then error(problem, 0) end
+  end
 
-  jess.fs.createDir(path)
+  local done, problem = fs.mkdir(path, { recursive = true })
+  if not done then error(problem, 0) end
   return path
 end
 
 local function read(path: string): string
-  return assert(jess.fs.read(path), `'{path}' isn't there`)
+  return (fs.readFileString(path) or error(`'{path}' isn't there`, 0))
 end
 
 --- The package's tests folder, from this file's chunk name: `jess package test` runs the suite
@@ -38,7 +42,7 @@ local function tests(): string
 end
 
 --- What a report held before the code was last changed, kept in `golden`.
-local function golden(name: string): string return read(jess.fs.join(tests(), 'golden', name)) end
+local function golden(name: string): string return read(fs.join(tests(), 'golden', name)) end
 
 local function info(id: string, previous: string, following: string, speaker: string): Record
   return {
@@ -166,7 +170,7 @@ suite.describe('closure audit', function()
       { type = 'Race', flags = '', id = 'Human', spells = {} },
       { type = 'Cell', flags = '', name = 'Bay', region = 'Nowhere', data = { flags = 'IS_INTERIOR' } },
     }
-    local path = jess.fs.join(folder 'starwind-closure', 'closure.json')
+    local path = fs.join(folder 'starwind-closure', 'closure.json')
     local asked = 0
 
     local closure = starwind.audit.closure(records, path, function()
@@ -185,7 +189,7 @@ suite.describe('closure audit', function()
       { type = 'Static', flags = '', id = 'Rock' },
       { type = 'Container', flags = '', id = 'Crate', inventory = { { 1, 'ROCK' } } },
     }
-    local path = jess.fs.join(folder 'starwind-closure-clean', 'closure.json')
+    local path = fs.join(folder 'starwind-closure-clean', 'closure.json')
     local closure = starwind.audit.closure(records, path, function() error 'asked' end)
 
     expect(closure.hard).toBe(0)
@@ -203,7 +207,7 @@ suite.describe('closure audit', function()
       { type = 'Static', flags = '', id = 'Rock' },
       { type = 'Container', flags = '', id = 'Chest', inventory = { { 1, 'Phantom' }, { 1, 'Crate' } } },
     }, 3)
-    local path = jess.fs.join(folder 'starwind-closure-gap', 'closure.json')
+    local path = fs.join(folder 'starwind-closure-gap', 'closure.json')
     local closure = starwind.audit.closure(records, path, function() return {} end)
 
     expect(closure.hard).toBe(2)
@@ -233,7 +237,7 @@ suite.describe('main-quest guard', function()
       { name = 'three', records = anchored },
     }, 2)
     local checks: { Record } = {}
-    local path = jess.fs.join(folder 'starwind-guard-gap', 'guard.json')
+    local path = fs.join(folder 'starwind-guard-gap', 'guard.json')
     starwind.audit.mainQuest('a gap', staged, checks, path)
 
     expect(#checks).toBe(1)
@@ -264,7 +268,7 @@ suite.describe('hygiene audit', function()
       unread,
       source('Patch', info('100', '', '400', 'Old_Pilot')),
     }, 2)
-    local path = jess.fs.join(folder 'starwind-hygiene-gap', 'hygiene.json')
+    local path = fs.join(folder 'starwind-hygiene-gap', 'hygiene.json')
     local result = starwind.hygiene.audit(vanilla, sources, {}, path)
     local reports = result.sources :: { Record }
 
@@ -279,9 +283,9 @@ suite.describe('late actors', function()
   suite.it('classes an actor only link dirt brought in, and writes its cleanup', function()
     local out = folder 'starwind-late-actors'
     local paths = {
-      report = jess.fs.join(out, 'late.json'),
-      markdown = jess.fs.join(out, 'late.md'),
-      cleanup = jess.fs.join(out, 'cleanup.sh'),
+      report = fs.join(out, 'late.json'),
+      markdown = fs.join(out, 'late.md'),
+      cleanup = fs.join(out, 'cleanup.sh'),
     }
     local parent = info('100', '', '200', 'Old_Pilot')
     local dirt = info('100', '', '400', 'Old_Pilot')
@@ -365,9 +369,9 @@ suite.describe('late actors', function()
   suite.it('writes no cleanup when nothing came in late', function()
     local out = folder 'starwind-late-none'
     local paths = {
-      report = jess.fs.join(out, 'late.json'),
-      markdown = jess.fs.join(out, 'late.md'),
-      cleanup = jess.fs.join(out, 'cleanup.sh'),
+      report = fs.join(out, 'late.json'),
+      markdown = fs.join(out, 'late.md'),
+      cleanup = fs.join(out, 'cleanup.sh'),
     }
 
     local result = starwind.provenance.report({
@@ -386,7 +390,7 @@ suite.describe('late actors', function()
     }, paths)
 
     expect(result.late_actor_count).toBe(0)
-    expect(jess.fs.exists(paths.cleanup)).toBe(false)
+    expect(fs.exists(paths.cleanup)).toBe(false)
     expect(read(paths.markdown)).toBe(golden 'no-late-actors.md')
   end)
 end)
@@ -426,7 +430,7 @@ suite.describe('dialogue audit', function()
     answered.filters = { filter('NotEqual', 2), filter('Less', 4.5) }
 
     local header: Record = { type = 'Header', flags = '', masters = {} }
-    local path = jess.fs.join(folder 'starwind-audit-content', 'audit.json')
+    local path = fs.join(folder 'starwind-audit-content', 'audit.json')
 
     local report = starwind.dialogue.audit {
       final = { name = 'final', records = { header, written, held, changed, answered } },
@@ -469,7 +473,7 @@ suite.describe('dialogue audit', function()
     local said = info('100', '', '', '')
     -- Only the script makes Morrowind's topic a live one, and it sits past the gap.
     local adds: Record = { type = 'Script', flags = '', id = 'Adds', text = 'begin adds\naddtopic ships\nend' }
-    local path = jess.fs.join(folder 'starwind-audit-gap', 'audit.json')
+    local path = fs.join(folder 'starwind-audit-gap', 'audit.json')
 
     local report = starwind.dialogue.audit {
       final = { name = 'final', records = { header, topic, said } },

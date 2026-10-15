@@ -4,6 +4,7 @@
 -- why, and the exit status of each way a command can end short of a finished build. Its messages
 -- go to the suite's own standard error.
 local cli = require '@starwind/cli'
+local fs = require '@dream/fs'
 local test = require '@jess/test'
 local expect = test.expect
 local suite = test.new()
@@ -35,7 +36,7 @@ local Refused: { { argv: { string }, message: string } } = {
 
 local function scratch(name: string): string
   local root = assert(rawget(_G, 'scratchRoot') :: string?, 'the case needs a scratchRoot')
-  return jess.fs.join(root, name)
+  return fs.join(root, name)
 end
 
 suite.describe('parse', function()
@@ -152,22 +153,27 @@ suite.describe('run', function()
 
   suite.it('returns 8 for a root that isn\'t a folder, and makes nothing there', function()
     local missing = scratch 'starwind-cli-missing-root'
-    expect(jess.fs.isDir(missing)).toBe(false)
+    expect(fs.isDir(missing)).toBe(false)
     expect(cli.run { 'build', missing }).toBe(8)
     expect(cli.run { 'build', missing, '--strict', '--keep-work', '--timings' }).toBe(8)
-    expect(jess.fs.isDir(missing)).toBe(false)
+    expect(fs.isDir(missing)).toBe(false)
   end)
 
   suite.it('returns 9 when the build raises, having written only under --output', function()
     local root, output = scratch 'starwind-cli-empty-root', scratch 'starwind-cli-output'
 
-    if not jess.fs.isDir(root) then jess.fs.createDir(root) end
+    if not fs.isDir(root) then
+      local done, problem = fs.mkdir(root, { recursive = true })
+      if not done then error(problem, 0) end
+    end
 
     -- The root has no plugins folder, so the build stops at its first source.
     expect(cli.run { 'build', root, '--output', output, '--timings' }).toBe(9)
-    expect(jess.fs.isDir(jess.fs.join(root, '.swbuild'))).toBe(false)
-    expect(jess.fs.list(root)).toEqual {}
-    expect(jess.fs.isDir(output)).toBe(true)
+    expect(fs.isDir(fs.join(root, '.swbuild'))).toBe(false)
+    local listed, problem = fs.list(root)
+    if not listed then error(problem, 0) end
+    expect(listed).toEqual {}
+    expect(fs.isDir(output)).toBe(true)
   end)
 end)
 

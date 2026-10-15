@@ -4,6 +4,7 @@
 
 local addVanillaRefs = require '@add-vanilla-refs'
 local bytes = require '@dream/bytes'
+local fs = require '@dream/fs'
 local mergeToMaster = require '@merge-to-master'
 local sources = require './sources'
 local surgery = require './surgery'
@@ -41,8 +42,8 @@ function pipeline.compile(plugins: string): (Work, Compiled)
   end
 
   for _, source in sources.Included do
-    local path = jess.fs.join(plugins, source.json)
-    local text = jess.fs.read(path)
+    local path = fs.join(plugins, source.json)
+    local text = fs.readFileString(path)
 
     if not text then error(`missing definitive source JSON: {source.json}`) end
 

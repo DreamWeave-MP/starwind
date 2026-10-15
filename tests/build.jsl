@@ -55,11 +55,15 @@ local ClosureReport = 'reports/Starwind-Definitive-closure-audit.json'
 local function folder(name: string): string
   local scratch =
     assert(rawget(_G, 'scratchRoot') :: string?, 'the suite needs a host-owned scratchRoot')
-  local path = jess.fs.join(scratch, name)
+  local path = fs.join(scratch, name)
 
-  if jess.fs.exists(path) then assert(fs.remove(path, { recursive = true })) end
+  if fs.exists(path) then
+    local done, problem = fs.remove(path, { recursive = true })
+    if not done then error(problem, 0) end
+  end
 
-  jess.fs.createDir(path)
+  local done, problem = fs.mkdir(path, { recursive = true })
+  if not done then error(problem, 0) end
   return path
 end
 
@@ -78,14 +82,14 @@ end
 suite.describe('build', function()
   suite.it('writes what it wrote before, byte for byte', function()
     local root = merged('starwind-build', corpus.world(Shape))
-    local output = jess.fs.join(root, '.swbuild', 'definitive')
+    local output = fs.join(root, '.swbuild', 'definitive')
     local timings: { [string]: number } = {}
     local manifest =
       starwind.build { root = root, strict = true, keepWork = true, timings = timings }
 
     expect(corpus.digests(root, output)).toEqual(Written)
     expect(manifest.edition).toBe 'definitive'
-    expect(manifest.output).toBe(jess.fs.join(output, 'out', 'Starwind-Definitive.omwaddon'))
+    expect(manifest.output).toBe(fs.join(output, 'out', 'Starwind-Definitive.omwaddon'))
 
     local stages = {}
 
@@ -112,7 +116,7 @@ suite.describe('build', function()
 
   suite.it('writes the same without --strict and --keep-work, but for the work folder', function()
     local root = merged('starwind-build-plain', corpus.world(Shape))
-    local output = jess.fs.join(root, 'elsewhere')
+    local output = fs.join(root, 'elsewhere')
     starwind.build { root = root, output = output }
 
     -- The manifest and the reports name the output folder, which is another here.
@@ -124,15 +128,15 @@ suite.describe('build', function()
       expect(written[name]).toBe(Written[name])
     end
 
-    expect(jess.fs.isDir(jess.fs.join(output, 'work'))).toBe(false)
-    expect(jess.fs.isDir(jess.fs.join(root, '.swbuild'))).toBe(false)
+    expect(fs.isDir(fs.join(output, 'work'))).toBe(false)
+    expect(fs.isDir(fs.join(root, '.swbuild'))).toBe(false)
   end)
 
   suite.it('stops at the first checkpoint an anchor is missing from, naming it', function()
     local world = corpus.world(Shape)
     without(world, 'V115', 'Npc', 'SW_ShipQuester')
     local root = merged('starwind-build-anchor', world)
-    local output = jess.fs.join(root, '.swbuild', 'definitive')
+    local output = fs.join(root, '.swbuild', 'definitive')
 
     expect(function() starwind.build { root = root } end).toThrow(
       'main-quest preservation failed at before-definitive-preprocess: records=[Npc:SW_ShipQuester], cell_references=[]'
@@ -151,8 +155,8 @@ suite.describe('build', function()
     table.insert(world.V115, crate)
     table.insert(world.Patch, door)
     local root = merged('starwind-build-closure', world)
-    local output = jess.fs.join(root, '.swbuild', 'definitive')
-    local report = jess.fs.join(output, 'reports', 'Starwind-Definitive-closure-audit.json')
+    local output = fs.join(root, '.swbuild', 'definitive')
+    local report = fs.join(output, 'reports', 'Starwind-Definitive-closure-audit.json')
 
     expect(function() starwind.build { root = root } end).toThrow(
       `unresolved hard dependencies: 3 (see {report})`
@@ -162,7 +166,8 @@ suite.describe('build', function()
 
   suite.it('says which source is missing', function()
     local root = merged('starwind-build-missing', corpus.world(Shape))
-    assert(fs.remove(jess.fs.join(root, 'plugins', 'naboo.json')))
+    local done, problem = fs.remove(fs.join(root, 'plugins', 'naboo.json'))
+    if not done then error(problem, 0) end
 
     expect(function() starwind.build { root = root } end).toThrow(
       'missing definitive source JSON: naboo.json'
@@ -174,11 +179,11 @@ suite.describe('dialogue audit', function()
   suite.it('reports a plugin whose INFOs have drifted as it did before', function()
     local root = merged('starwind-drift', corpus.world(Shape))
     local pipeline = starwind.pipeline
-    local staged, compiled = pipeline.compile(jess.fs.join(root, 'plugins'))
+    local staged, compiled = pipeline.compile(fs.join(root, 'plugins'))
     pipeline.preprocess(staged)
     pipeline.merge(staged)
     local decoupled = pipeline.decouple(staged)
-    local path = jess.fs.join(root, 'drift.json')
+    local path = fs.join(root, 'drift.json')
 
     local function sources()
       return {
@@ -207,7 +212,9 @@ suite.describe('dialogue audit', function()
     expect(summary.potentially_competing_inversions > 0).toBe(true)
     expect(summary.proven_disjoint_inversions > 0).toBe(true)
     expect(summary.potential_patch_candidate_infos > 0).toBe(true)
-    expect(bytes.sha256(assert(jess.fs.read(path)))).toBe(Drifted)
+    local fileText, problem = fs.readFileString(path)
+    if not fileText then error(problem, 0) end
+    expect(bytes.sha256(fileText)).toBe(Drifted)
   end)
 end)
 

@@ -18,6 +18,7 @@ Exit statuses: 0 when the command did what it was asked, 8 when the command line
 folder), 9 when the build raised. Messages go to standard error as `starwind: <message>`.
 ]]
 
+local fs = require '@dream/fs'
 local process = require '@dream/process'
 local starwind = require '@starwind'
 
@@ -139,7 +140,7 @@ local function run(argv: { string }): number
   local options = command.options :: starwind.Options
 
   -- `build` makes its output folders before it reads anything, by default under the root.
-  if not jess.fs.isDir(options.root) then return usage(`'{options.root}' isn't a folder`) end
+  if not fs.isDir(options.root) then return usage(`'{options.root}' isn't a folder`) end
 
   -- The build raises where build_starwind.py exits non-zero, with its message.
   local built, result = pcall(starwind.build, options)

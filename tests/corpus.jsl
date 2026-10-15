@@ -22,6 +22,7 @@
 --     Naboo's scripts and junk.
 local bytes = require '@dream/bytes'
 local core = require '@tes3'
+local fs = require '@dream/fs'
 local starwind = require '@starwind'
 local tes3 = require '@tes3conv/records'
 local tes3conv = require '@tes3conv'
@@ -1016,15 +1017,19 @@ end
 
 --- Writes `world` as the JSON sources of a sw_merged folder at `root`, which is made.
 function corpus.write(root: string, world: World)
-  local plugins = jess.fs.join(root, 'plugins')
+  local plugins = fs.join(root, 'plugins')
 
   for _, folder in { root, plugins } do
-    if not jess.fs.isDir(folder) then jess.fs.createDir(folder) end
+    if not fs.isDir(folder) then
+      local succeeded, problem = fs.mkdir(folder, { recursive = true })
+      if not succeeded then error(problem, 0) end
+    end
   end
 
   for _, source in starwind.sources.Included do
     local records = assert(world[source.key], `the world has no {source.key}`)
-    jess.fs.write(jess.fs.join(plugins, source.json), tes3conv.encode(records), { backup = false })
+    local done, problem = fs.writeFile(fs.join(plugins, source.json), tes3conv.encode(records), { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
   end
 end
 
@@ -1068,7 +1073,7 @@ function corpus.digests(root: string, output: string): { [string]: string }
   local digests: { [string]: string } = {}
 
   local function hash(name: string, path: string)
-    local text = assert(jess.fs.read(path), `'{path}' isn't there`)
+    local text = (fs.readFileString(path) or error(`'{path}' isn't there`, 0))
 
     if string.match(name, '%.omwaddon$') then
       digests[name] = bytes.sha256(text)
@@ -1084,16 +1089,22 @@ function corpus.digests(root: string, output: string): { [string]: string }
     digests[name] = bytes.sha256(placed)
   end
 
-  for _, name in jess.fs.list(output) do
-    local path = jess.fs.join(output, name)
+  local names, problem = fs.list(output)
+  if not names then error(problem, 0) end
 
-    if not jess.fs.isDir(path) then
+  for _, name in names do
+    local path = fs.join(output, name)
+
+    if not fs.isDir(path) then
       hash(name, path)
       continue
     end
 
-    for _, file in jess.fs.list(path) do
-      hash(`{name}/{file}`, jess.fs.join(path, file))
+    local names, problem = fs.list(path)
+    if not names then error(problem, 0) end
+
+    for _, file in names do
+      hash(`{name}/{file}`, fs.join(path, file))
     end
   end
 

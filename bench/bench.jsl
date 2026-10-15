@@ -81,9 +81,12 @@ local function check(name: string, got: string, expected: string)
   if got ~= expected then error(`{name}: what it wrote hashes to {got}, not {expected}`, 0) end
 end
 
-local root = jess.fs.join(scratch, 'starwind-bench')
+local root = fs.join(scratch, 'starwind-bench')
 
-if jess.fs.exists(root) then assert(fs.remove(root, { recursive = true })) end
+if fs.exists(root) then
+  local done, problem = fs.remove(root, { recursive = true })
+  if not done then error(problem, 0) end
+end
 
 local world = corpus.world(Shape)
 local sourceRecords = 0
@@ -120,7 +123,7 @@ end
 local building = `the build of {sourceRecords} source records`
 
 if wanted(building) then
-  local output = jess.fs.join(root, '.swbuild', 'definitive')
+  local output = fs.join(root, '.swbuild', 'definitive')
 
   local function build(): (number, { [string]: number })
     local timings: { [string]: number } = {}
@@ -192,11 +195,11 @@ local Auditing = 'the dialogue audit of that build, its INFOs drifted'
 
 if wanted(Auditing) then
   local pipeline = starwind.pipeline
-  local staged, compiled = pipeline.compile(jess.fs.join(root, 'plugins'))
+  local staged, compiled = pipeline.compile(fs.join(root, 'plugins'))
   pipeline.preprocess(staged)
   pipeline.merge(staged)
   local decoupled = pipeline.decouple(staged)
-  local path = jess.fs.join(root, 'drifted-dialogue-chain-audit.json')
+  local path = fs.join(root, 'drifted-dialogue-chain-audit.json')
 
   local options = {
     final = { name = 'final', records = corpus.drifted(decoupled.final, 6) },
@@ -222,7 +225,12 @@ if wanted(Auditing) then
     Auditing,
     Drifted,
     function() starwind.dialogue.audit(options) end,
-    function() return bytes.sha256(assert(jess.fs.read(path))) end
+    function()
+      local fileText, problem = fs.readFileString(path)
+      if not fileText then error(problem, 0) end
+
+      return bytes.sha256(fileText)
+    end
   )
   print(`{Auditing}\t{seconds}`)
 end

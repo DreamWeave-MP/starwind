@@ -10,6 +10,7 @@
 -- pre-decoupling plugin.
 
 local dialogue = require './dialogue'
+local fs = require '@dream/fs'
 local hygiene = require './hygiene'
 local report = require './report'
 local tes3 = require '@tes3conv/records'
@@ -461,7 +462,8 @@ local function writeMarkdown(path: string, result: { [string]: Json })
     )
   end
 
-  jess.fs.write(path, table.concat(lines, '\n') .. '\n', { backup = false })
+  local done, problem = fs.writeFile(path, table.concat(lines, '\n') .. '\n', { atomic = true, createParents = true })
+  if not done then error(problem, 0) end
 end
 
 local function writeCleanup(path: string, byFile: { [string]: Json })
@@ -506,7 +508,8 @@ local function writeCleanup(path: string, byFile: { [string]: Json })
     table.insert(lines, '')
   end
 
-  jess.fs.write(path, table.concat(lines, '\n'), { backup = false })
+  local done, problem = fs.writeFile(path, table.concat(lines, '\n'), { atomic = true, createParents = true })
+  if not done then error(problem, 0) end
 end
 
 function provenance.report(inputs: Inputs, paths: Paths): { [string]: Json }

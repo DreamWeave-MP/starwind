@@ -29,6 +29,7 @@ The stages, the tools they replace, and the record semantics are in the modules:
 
 local audit = require '@self/audit'
 local dialogue = require '@self/dialogue'
+local fs = require '@dream/fs'
 local hygiene = require '@self/hygiene'
 local pipeline = require '@self/pipeline'
 local provenance = require '@self/provenance'
@@ -52,7 +53,10 @@ export type Options = {
 }
 
 local function ensureDir(path: string)
-  if not jess.fs.isDir(path) then jess.fs.createDir(path) end
+  if not fs.isDir(path) then
+    local done, problem = fs.mkdir(path, { recursive = true })
+    if not done then error(problem, 0) end
+  end
 end
 
 local Inherited = { 'Morrowind', 'Tribunal', 'Bloodmoon', 'Minimal' }
@@ -72,10 +76,10 @@ end
 
 local function build(options: Options): { [string]: Json }
   local root = options.root
-  local plugins = jess.fs.join(root, 'plugins')
-  local output = options.output or jess.fs.join(root, '.swbuild', 'definitive')
+  local plugins = fs.join(root, 'plugins')
+  local output = options.output or fs.join(root, '.swbuild', 'definitive')
   local out, reports, work =
-    jess.fs.join(output, 'out'), jess.fs.join(output, 'reports'), jess.fs.join(output, 'work')
+    fs.join(output, 'out'), fs.join(output, 'reports'), fs.join(output, 'work')
   ensureDir(output)
   ensureDir(out)
   ensureDir(reports)
@@ -90,20 +94,20 @@ local function build(options: Options): { [string]: Json }
   end
 
   local paths = {
-    final = jess.fs.join(out, 'Starwind-Definitive.omwaddon'),
-    data = jess.fs.join(out, 'Star_Data.omwaddon'),
-    content = jess.fs.join(out, 'Starwind.omwaddon'),
-    hygiene = jess.fs.join(reports, 'Starwind-definitive-dialogue-source-hygiene.json'),
-    mainQuest = jess.fs.join(reports, 'main-quest-preservation.json'),
-    closure = jess.fs.join(reports, 'Starwind-Definitive-closure-audit.json'),
-    dialogue = jess.fs.join(reports, 'Starwind-Definitive-dialogue-chain-audit.json'),
-    lateActors = jess.fs.join(reports, 'late-actor-provenance.json'),
-    lateActorsMarkdown = jess.fs.join(reports, 'late-actor-provenance.md'),
-    lateActorsCleanup = jess.fs.join(reports, 'late-actor-provenance-cleanup.sh'),
-    split = jess.fs.join(reports, 'starwind-split-report.json'),
-    log = jess.fs.join(work, 'decoupleLog.txt'),
-    preAddVanilla = jess.fs.join(work, 'Starwind-Definitive-pre-addVanilla.omwaddon'),
-    manifest = jess.fs.join(output, 'build-manifest.json'),
+    final = fs.join(out, 'Starwind-Definitive.omwaddon'),
+    data = fs.join(out, 'Star_Data.omwaddon'),
+    content = fs.join(out, 'Starwind.omwaddon'),
+    hygiene = fs.join(reports, 'Starwind-definitive-dialogue-source-hygiene.json'),
+    mainQuest = fs.join(reports, 'main-quest-preservation.json'),
+    closure = fs.join(reports, 'Starwind-Definitive-closure-audit.json'),
+    dialogue = fs.join(reports, 'Starwind-Definitive-dialogue-chain-audit.json'),
+    lateActors = fs.join(reports, 'late-actor-provenance.json'),
+    lateActorsMarkdown = fs.join(reports, 'late-actor-provenance.md'),
+    lateActorsCleanup = fs.join(reports, 'late-actor-provenance-cleanup.sh'),
+    split = fs.join(reports, 'starwind-split-report.json'),
+    log = fs.join(work, 'decoupleLog.txt'),
+    preAddVanilla = fs.join(work, 'Starwind-Definitive-pre-addVanilla.omwaddon'),
+    manifest = fs.join(output, 'build-manifest.json'),
   }
 
   local staged, compiled = pipeline.compile(plugins)
@@ -163,7 +167,7 @@ local function build(options: Options): { [string]: Json }
     return [
       for {binary} in sources.Included
       if staged[binary]
-      => { name = jess.fs.join(work, binary), records = staged[binary] }
+      => { name = fs.join(work, binary), records = staged[binary] }
     ]
   end
 
@@ -175,7 +179,7 @@ local function build(options: Options): { [string]: Json }
   local canonical = pipeline.merge(staged)
   audit.mainQuest(
     'after-canonical-merge',
-    { { name = jess.fs.join(work, pipeline.Canonical), records = canonical } },
+    { { name = fs.join(work, pipeline.Canonical), records = canonical } },
     checks,
     paths.mainQuest
   )
@@ -185,18 +189,21 @@ local function build(options: Options): { [string]: Json }
   stage 'decouple'
 
   local final = tes3conv.plugin(decoupled.final)
-  jess.fs.replace(paths.final, final:save())
+  local done, problem = fs.writeFile(paths.final, final:save(), { atomic = true })
+  if not done then error(problem, 0) end
 
   if options.keepWork then
     ensureDir(work)
-    jess.fs.replace(paths.preAddVanilla, tes3conv.plugin(decoupled.preAddVanilla):save())
-    jess.fs.write(paths.log, table.concat(decoupled.log, '\n') .. '\n', { backup = false })
+    local done, problem = fs.writeFile(paths.preAddVanilla, tes3conv.plugin(decoupled.preAddVanilla):save(), { atomic = true })
+    if not done then error(problem, 0) end
+    local done, problem = fs.writeFile(paths.log, table.concat(decoupled.log, '\n') .. '\n', { atomic = true, createParents = true })
+    if not done then error(problem, 0) end
   end
 
   stage 'write'
 
   -- Every check from here reads the monolith as written.
-  local finalBytes = assert(jess.fs.readBuffer(paths.final), `failed to read '{paths.final}'`)
+  local finalBytes = (fs.readFile(paths.final) or error(`failed to read '{paths.final}'`, 0))
   local written = split.readBack(core.open(finalBytes))
   local finalRecords: Records = { written.header }
   table.move(written.records, 1, #written.records, 2, finalRecords)
@@ -230,9 +237,9 @@ local function build(options: Options): { [string]: Json }
     final = { name = paths.final, records = finalRecords },
     starwind = { name = paths.preAddVanilla, records = decoupled.preAddVanilla },
     bases = {
-      { name = jess.fs.join(work, 'Morrowind.esm'), records = staged['Morrowind.esm'] },
-      { name = jess.fs.join(work, 'Tribunal.esm'), records = staged['Tribunal.esm'] },
-      { name = jess.fs.join(work, 'Bloodmoon.esm'), records = staged['Bloodmoon.esm'] },
+      { name = fs.join(work, 'Morrowind.esm'), records = staged['Morrowind.esm'] },
+      { name = fs.join(work, 'Tribunal.esm'), records = staged['Tribunal.esm'] },
+      { name = fs.join(work, 'Bloodmoon.esm'), records = staged['Bloodmoon.esm'] },
     },
     log = decoupled.log,
     logPath = paths.log,

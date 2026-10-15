@@ -3,6 +3,7 @@
 -- JSON reports in the shape build_starwind.py writes them: `json.dumps(value, indent=2)`, keys in
 -- the order they were set, non-ASCII escaped. Luau tables don't keep key order, so a report's
 -- objects are built with `object`, which records it; arrays with `array`, so an empty one is `[]`.
+local fs = require '@dream/fs'
 
 -- An object and an array are members of their own: Luau's table indexers are invariant, so a
 -- `{ [string]: Json }` that `object` makes, or a `{ Json }`, is not a `{ [string | number]: Json }`.
@@ -240,15 +241,22 @@ end
 
 -- Writes `value` to `path` as Python's report writers do: indented, with a final newline.
 function report.write(path: string, value: Json, finalNewline: boolean?)
-  local parent = jess.fs.parent(path)
+  local parent = fs.parent(path)
 
-  if parent and parent ~= '' and not jess.fs.isDir(parent) then jess.fs.createDir(parent) end
+  if parent and parent ~= '' and not fs.isDir(parent) then
 
-  jess.fs.write(
+    local done, problem = fs.mkdir(parent, { recursive = true })
+
+    if not done then error(problem, 0) end
+
+  end
+
+  local done, problem = fs.writeFile(
     path,
     report.encode(value) .. (if finalNewline == false then '' else '\n'),
-    { backup = false }
+    { atomic = true, createParents = true }
   )
+  if not done then error(problem, 0) end
 end
 
 -- Each field name `snakeKey` has spelled, by the name: a record's fields are named once for
