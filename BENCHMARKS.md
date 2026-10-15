@@ -157,3 +157,56 @@ nine merges, `@add-vanilla-refs`, and writing and reading the plugins are 858 ms
 1,357, and were 871 of the 2,124. The package's own stages went from 1,238 ms to 475. Of those,
 the split is nearly half: it writes two plugins and reads them back, and its report alone is 3.8 MB of
 JSON that names every dependency of Starwind on Star_Data.
+
+## Which modules are native, and why
+
+Jess compiles to machine code only what is marked (`--!native` on a module, `@native` on one
+function), and every load pays for what is marked. A module carries `--!native` when a row below
+spends its time there and the module is small (12 KB or less); a larger module carries `@native`
+on the functions the row spends its time in, and nothing else.
+
+Measured 2026-10-15 with `jess 0.1.0`, the verified release build of jess `07c38cb` on l3i
+2.0.3, on the i7-10870H, the one-minute load 1.41 and 1.46 at the start of the two
+sessions. In each session the bench ran alternately on this package and on a copy of it with
+every module marked, three fresh runs of `bench/bench.jsl` each, every run's row the median of
+its batches; a column is the median of the three, and a ratio is against the all-marked runs of
+the same session. Which functions a row spends its time in comes from `jess run --profile` of
+that row alone, unmarked. The load cost is a fresh `jess run --package <this package>
+--package-path jpk` of a script that only requires `@starwind`, the two sides alternating, the
+median of five each after one warm-up.
+
+| Requiring `@starwind` | All marked | This state |
+| --- | ---: | ---: |
+| Unmarked | 0.171 s | 0.136 s |
+| Final | 0.199 s | 0.192 s |
+
+| Row | All marked (ms) | Unmarked / all marked | Final (ms) | Final / all marked |
+| --- | ---: | ---: | ---: | ---: |
+| the build of 17732 source records | 1530.2 | **1.135×** | 1537.9 | 1.005× |
+| the build: compile | 437.2 | 0.965× | 439.5 | 1.005× |
+| the build: hygiene | 85.24 | **1.352×** | 85.60 | 1.004× |
+| the build: preprocess | 26.79 | **1.268×** | 27.10 | 1.012× |
+| the build: merge | 92.44 | 1.035× | 89.46 | 0.968× |
+| the build: decouple | 149.8 | 1.036× | 151.0 | 1.008× |
+| the build: write | 257.8 | 0.953× | 257.6 | 0.999× |
+| the build: read back | 64.47 | 0.936× | 63.95 | 0.992× |
+| the build: closure | 28.45 | **1.395×** | 27.97 | 0.983× |
+| the build: dialogue audit | 42.63 | **1.560×** | 46.08 | **1.081×** |
+| the build: late actors | 97.12 | **1.836×** | 99.59 | 1.025× |
+| the build: split | 245.0 | **1.243×** | 240.6 | 0.982× |
+| the build: manifest | 1.146 | **1.089×** | 1.273 | **1.111×** |
+| the dialogue audit of that build, its INFOs drifted | 199.1 | **1.922×** | 192.1 | 0.965× |
+
+What carries the directive (every module here is one the build runs):
+
+- Whole: `audit`, `dependencies`, `dialogue`, `hygiene`, `pipeline`, `provenance`, `report`,
+  `sources`, `split`, `surgery`.
+- Unmarked: `cli`, `init`, `main`.
+
+A build spends most of its time in `@tes3`, so the profiles never put starwind's own stage modules
+in their top lines, and marking only what they named (`dialogue`, `provenance`, `report`) left
+the build of 17,732 records 1.05x to 1.08x slower than all marked, about 0.1 s of 1.3 s, with the
+stages up to 1.50x. A build is the tool's work, so every module it runs is marked whole; `cli`,
+`init`, and `main` parse and dispatch once a run and load as bytecode, 7 ms a load. The two rows
+still above 5% are the dialogue audit (1.08x) and writing the manifest (1.11x, of a 1.1 ms
+step), at the edge of this protocol's noise.
