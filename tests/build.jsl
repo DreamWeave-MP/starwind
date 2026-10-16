@@ -128,8 +128,8 @@ suite.describe('build', function()
       expect(written[name]).toBe(Written[name])
     end
 
-    expect(fs.isDir(fs.join(output, 'work'))).toBe(false)
-    expect(fs.isDir(fs.join(root, '.swbuild'))).toBe(false)
+    expect((fs.isDir(fs.join(output, 'work')))).toBe(false)
+    expect((fs.isDir(fs.join(root, '.swbuild')))).toBe(false)
   end)
 
   suite.it('stops at the first checkpoint an anchor is missing from, naming it', function()

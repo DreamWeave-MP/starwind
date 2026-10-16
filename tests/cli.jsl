@@ -153,10 +153,10 @@ suite.describe('run', function()
 
   suite.it('returns 8 for a root that isn\'t a folder, and makes nothing there', function()
     local missing = scratch 'starwind-cli-missing-root'
-    expect(fs.isDir(missing)).toBe(false)
+    expect((fs.isDir(missing))).toBe(false)
     expect(cli.run { 'build', missing }).toBe(8)
     expect(cli.run { 'build', missing, '--strict', '--keep-work', '--timings' }).toBe(8)
-    expect(fs.isDir(missing)).toBe(false)
+    expect((fs.isDir(missing))).toBe(false)
   end)
 
   suite.it('returns 9 when the build raises, having written only under --output', function()
@@ -169,11 +169,11 @@ suite.describe('run', function()
 
     -- The root has no plugins folder, so the build stops at its first source.
     expect(cli.run { 'build', root, '--output', output, '--timings' }).toBe(9)
-    expect(fs.isDir(fs.join(root, '.swbuild'))).toBe(false)
+    expect((fs.isDir(fs.join(root, '.swbuild')))).toBe(false)
     local listed, problem = fs.list(root)
     if not listed then error(problem, 0) end
     expect(listed).toEqual {}
-    expect(fs.isDir(output)).toBe(true)
+    expect((fs.isDir(output))).toBe(true)
   end)
 end)
 

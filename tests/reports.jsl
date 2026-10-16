@@ -399,7 +399,7 @@ suite.describe('late actors', function()
     }, paths)
 
     expect(result.late_actor_count).toBe(0)
-    expect(fs.exists(paths.cleanup)).toBe(false)
+    expect((fs.exists(paths.cleanup))).toBe(false)
     expect(read(paths.markdown)).toBe(golden 'no-late-actors.md')
   end)
 end)
