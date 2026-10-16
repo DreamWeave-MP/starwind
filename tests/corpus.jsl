@@ -27,6 +27,15 @@ local starwind = require '@starwind'
 local tes3 = require '@tes3conv/records'
 local tes3conv = require '@tes3conv'
 
+--- The text of the file at `path`, raising the read's own message when there is none.
+local function readText(path: string): string
+  local text, problem = fs.readFileString(path)
+  if not text then error(problem, 0) end
+
+  return text
+end
+
+
 type Table = tes3.Table
 type Value = tes3.Value
 type Record = tes3.Record
@@ -1073,7 +1082,7 @@ function corpus.digests(root: string, output: string): { [string]: string }
   local digests: { [string]: string } = {}
 
   local function hash(name: string, path: string)
-    local text = (fs.readFileString(path) or error(`'{path}' isn't there`, 0))
+    local text = (readText(path) or error(`'{path}' isn't there`, 0))
 
     if string.match(name, '%.omwaddon$') then
       digests[name] = bytes.sha256(text)

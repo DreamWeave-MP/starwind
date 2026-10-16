@@ -6,6 +6,15 @@ local fs = require '@dream/fs'
 local starwind = require '@starwind'
 local test = require '@jess/test'
 
+--- The text of the file at `path`, raising the read's own message when there is none.
+local function readText(path: string): string
+  local text, problem = fs.readFileString(path)
+  if not text then error(problem, 0) end
+
+  return text
+end
+
+
 local suite, expect = test.new(), test.expect
 
 type Record = { [string | number]: any }
@@ -28,7 +37,7 @@ local function folder(name: string): string
 end
 
 local function read(path: string): string
-  return (fs.readFileString(path) or error(`'{path}' isn't there`, 0))
+  return (readText(path) or error(`'{path}' isn't there`, 0))
 end
 
 --- The package's tests folder, from this file's chunk name: `jess package test` runs the suite
