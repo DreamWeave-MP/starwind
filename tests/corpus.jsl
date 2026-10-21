@@ -21,7 +21,7 @@
 --     list's entry, Enhanced's and the Patch's doubled references, the orphaned body parts, and
 --     Naboo's scripts and junk.
 local bytes = require '@dream/bytes'
-local core = require '@tes3'
+local core = require '@esm'
 local fs = require '@dream/fs'
 local starwind = require '@starwind'
 local tes3 = require '@tes3conv/records'

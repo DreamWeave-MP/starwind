@@ -44,7 +44,7 @@ jess run --package jpk/starwind --package-path jpk \
 - Machine: Intel Core i7-10870H @ 2.20 GHz, 16 threads, shared with other work while this ran.
 - Date: 2026-10-12.
 - Binary: the verified release build of Jess 0.1.0 the run measured with from 16:13 that day, on
-  l3i's 2.0.2 tree (Luau 0.742), the same one for both sides, with the same `@tes3`,
+  l3i's 2.0.2 tree (Luau 0.742), the same one for both sides, with the same `@esm`,
   `@tes3conv`, `@merge-to-master`, and `@add-vanilla-refs` beside both.
 - Base: `f15127a`, the package before the move, with the bench and its folder as they are now.
   Head: `2e5eebb`, the package after the move and its review.
@@ -61,7 +61,7 @@ jess run --package jpk/starwind --package-path jpk \
 | &nbsp;&nbsp;merge (`@merge-to-master`, a guard checkpoint) | 77.1 ms | 75.3 ms | no change |
 | &nbsp;&nbsp;decouple (`@add-vanilla-refs`) | 136.3 ms | 133.1 ms | no change |
 | &nbsp;&nbsp;write (`@tes3conv` encodes the plugins) | 192.3 ms | 201.5 ms | no change (0.95x) |
-| &nbsp;&nbsp;read back (`@tes3`, `@tes3conv`) | 54.8 ms | 47.4 ms | 1.16x, see below |
+| &nbsp;&nbsp;read back (`@esm`, `@tes3conv`) | 54.8 ms | 47.4 ms | 1.16x, see below |
 | &nbsp;&nbsp;closure | 39.9 ms | 23.2 ms | 1.72x |
 | &nbsp;&nbsp;dialogue audit | 267.6 ms | 39.1 ms | 6.84x |
 | &nbsp;&nbsp;late actors | 362.7 ms | 89.9 ms | 4.03x |
@@ -203,7 +203,7 @@ What carries the directive (every module here is one the build runs):
   `sources`, `split`, `surgery`.
 - Unmarked: `cli`, `init`, `main`.
 
-A build spends most of its time in `@tes3`, so the profiles never put starwind's own stage modules
+A build spends most of its time in `@esm`, so the profiles never put starwind's own stage modules
 in their top lines, and marking only what they named (`dialogue`, `provenance`, `report`) left
 the build of 17,732 records 1.05x to 1.08x slower than all marked, about 0.1 s of 1.3 s, with the
 stages up to 1.50x. A build is the tool's work, so every module it runs is marked whole; `cli`,

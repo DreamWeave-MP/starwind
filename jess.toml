@@ -15,7 +15,7 @@ tests = [
 ]
 
 [dependencies]
-"org.dreamweave.tes3" = "0.1"
+"org.dreamweave.esm" = "0.1"
 "org.dreamweave.tes3conv" = "0.1"
 "org.dreamweave.merge-to-master" = "0.1"
 "org.dreamweave.add-vanilla-refs" = "0.1"
@@ -29,7 +29,7 @@ tests = [
 
 [[layer]]
 id = "starwind.core"
-requires = ["tes3.core", "tes3conv.core", "merge-to-master.core", "add-vanilla-refs.core"]
+requires = ["esm.core", "tes3conv.core", "merge-to-master.core", "add-vanilla-refs.core"]
 exports = ["@starwind", "@starwind/cli"]
 
 # The build's command line: `src/main.jsl` hands its arguments to `@starwind/cli`. The build

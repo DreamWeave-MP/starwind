@@ -8,7 +8,7 @@ local fs = require '@dream/fs'
 local report = require './report'
 local tes3 = require '@tes3conv/records'
 local tes3conv = require '@tes3conv'
-local core = require '@tes3'
+local core = require '@esm'
 
 type Table = tes3.Table
 type Record = tes3.Record

@@ -39,7 +39,7 @@ local split = require '@self/split'
 local surgery = require '@self/surgery'
 local tes3 = require '@tes3conv/records'
 local tes3conv = require '@tes3conv'
-local core = require '@tes3'
+local core = require '@esm'
 
 type Records = tes3.Records
 type Json = report.Json
