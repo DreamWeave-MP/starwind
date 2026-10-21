@@ -1,0 +1,54 @@
+{
+  "schema_version": "3",
+  "document": "lock",
+  "project": "14eca538-2918-4b4f-90ae-80b764a62e57",
+  "note": "Written by CI when a release tag is pushed: what each published release's archive contains. Do not edit.",
+  "releases": [
+    {
+      "version": "0.1.0",
+      "locked_from": "02fb313d49702dafdb64e6df887b0b32ee75361f",
+      "artifacts": [
+        {
+          "id": "jpk",
+          "format": "jpk",
+          "filename": "org.dreamweave.starwind-0.1.0.jpk",
+          "media_type": "application/vnd.jess.jpk",
+          "size": 119337,
+          "digests": {
+            "sha256": "875c2bf9447af19121371aa0e00a58da4e0a82e0e3741ea54c8807a95f54e2a2"
+          },
+          "jess": {
+            "package": "org.dreamweave.starwind",
+            "jess_api": "1",
+            "content_digest": "6d8ab00f7aa8f3d0b12ee40fb938a117a045e6766298e601db655137da92b49e",
+            "dependencies": {
+              "org.dreamweave.add-vanilla-refs": "0.1",
+              "org.dreamweave.esm": "0.1",
+              "org.dreamweave.merge-to-master": "0.1",
+              "org.dreamweave.tes3conv": "0.1"
+            }
+          }
+        }
+      ],
+      "runtimes": {},
+      "platforms": [],
+      "provides": [],
+      "relationships": [],
+      "components": [
+        {
+          "id": "main",
+          "name": "starwind",
+          "path": ".",
+          "required": true,
+          "default": true,
+          "requires": [],
+          "conflicts": [],
+          "suggested_with": []
+        }
+      ],
+      "groups": [],
+      "extensions": {},
+      "critical_extensions": []
+    }
+  ]
+}
